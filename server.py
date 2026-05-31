@@ -199,7 +199,9 @@ def is_uk_location(location, title=""):
         "taiwan", "romania", "czech republic", "prague", "shenzhen", "detroit", "israel", 
         "milpitas", "miami", "cluj", "cluj-napoca", "hsinchu", "pune", "bengaluru", "noida", 
         "gurgaon", "gurugram", "cork", "galway", "lyon", "marseille", "hamburg", "rotterdam",
-        "porto", "milan", "atlanta", "dallas", "los angeles"
+        "porto", "milan", "atlanta", "dallas", "los angeles", "roma", "katowice", "polska", "warszawa",
+        "milano", "diegem", "belgique", "belgië", "belgium", "italia", "italy", "poland", "warsaw",
+        "europe", "asia", "global", "international", "worldwide"
     ]
     
     for term in non_uk_terms:
@@ -209,14 +211,18 @@ def is_uk_location(location, title=""):
             if not has_uk:
                 return False
                 
-    uk_positive = ["united kingdom", "uk", "gb", "england", "scotland", "wales", "northern_ireland_protected", "london", "manchester", "birmingham", "leeds", "glasgow", "edinburgh", "bristol", "cardiff", "belfast", "remote (uk)", "remote uk"]
-    if any(re.search(r'\b' + re.escape(u) + r'\b', loc_lower) for u in uk_positive):
+    uk_positive = ["united kingdom", "uk", "gb", "england", "scotland", "wales", "northern_ireland_protected", 
+                   "london", "manchester", "birmingham", "leeds", "glasgow", "edinburgh", "bristol", "cardiff", 
+                   "belfast", "remote (uk)", "remote uk", "marlow", "knutsford", "reading", "sheffield", 
+                   "liverpool", "newcastle", "nottingham", "leicester", "coventry", "southampton", "aberdeen"]
+                   
+    if any(re.search(r'\b' + re.escape(u) + r'\b', loc_lower) for u in uk_positive) or any(re.search(r'\b' + re.escape(u) + r'\b', title_lower) for u in uk_positive):
         return True
         
-    if any(w in loc_lower for w in ["remote", "flexible", "hybrid", "office"]):
+    if any(w in loc_lower for w in ["remote", "flexible", "hybrid", "office"]) or any(w in title_lower for w in ["remote", "flexible", "hybrid"]):
         return True
         
-    return True
+    return False # Default to False to guarantee 100% UK visa jobs integrity!
 
 
 def cleanup_non_uk_jobs():
@@ -268,7 +274,8 @@ def auto_discover_careers_url(company_name, city):
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
+        'Upgrade-Insecure-Requests': '1',
+        'Accept-Encoding': 'identity'
     }
     
     domain = ""
@@ -327,7 +334,7 @@ def auto_discover_careers_url(company_name, city):
     def probe_url(cand_url):
         try:
             req_probe = urllib.request.Request(cand_url, headers=headers)
-            with urllib.request.urlopen(req_probe, timeout=2.5) as resp:
+            with urllib.request.urlopen(req_probe, timeout=5.0) as resp:
                 if resp.status == 200:
                     return cand_url
         except Exception:
@@ -696,11 +703,37 @@ def scrape_company_careers_page_smart(company_name, careers_url, sponsor_id=None
                 
                 is_job = False
                 if 5 < len(text_clean) < 65:
-                    if any(kw in text_lower for kw in job_keywords):
-                        is_job = True
-                    elif any(p in href_lower for p in ["/jobs/", "/careers/", "/vacancy/", "/openings/", "/apply/"]):
-                        if not any(noise in text_lower for noise in ["sign in", "login", "cookie", "privacy", "about us", "terms", "faq", "contact", "home", "search"]):
-                            is_job = True
+                    # 1. Reject common generic informational career pages (Case-insensitive)
+                    non_job_patterns = [
+                        "our culture", "what we do", "working here", "work with us", "join us", "life at", "about us",
+                        "careers", "jobs", "vacancies", "openings", "talent community", "talent network", "talent pool",
+                        "diversity", "inclusion", "benefits", "rewards", "culture", "graduates", "students", "internships",
+                        "apprenticeships", "blogs", "articles", "news", "events", "cookie", "privacy", "terms of",
+                        "contact us", "help", "support office", "store support", "how we hire", "our process",
+                        "recruitment scam", "search jobs", "view all", "all jobs", "explore careers", "learn more",
+                        "read more", "click here", "sign in", "login", "register", "faq", "faqs", "help center",
+                        "leadership", "team", "values", "purpose", "who we are", "what we offer", "our stories",
+                        "cc licensing", "licensing support", "share your work", "navegadors", "eines", "agenda", "what you can do",
+                        "cio", "agenda", "what its like", "support and develop", "develop you", "discover how", "what it's like"
+                    ]
+                    
+                    is_fluff = any(re.search(r'\b' + re.escape(p) + r'\b', text_lower) for p in non_job_patterns)
+                    
+                    if not is_fluff:
+                        # 2. Strict job title keyword check using word boundaries (avoids matching "leadership")
+                        job_words = ["engineer", "developer", "designer", "manager", "nurse", "analyst", "operator", "consultant", "technician", 
+                                     "lead", "director", "writer", "architect", "support", "intern", "graduate", "specialist", "associate", 
+                                     "practitioner", "officer", "administrator", "head of", "recruiter", "executive", "adviser", "advisor"]
+                        
+                        has_keyword = any(re.search(r'\b' + re.escape(w) + r'\b', text_lower) for w in job_words)
+                        
+                        if has_keyword:
+                            # 3. Restrict job URLs to avoid generic pages
+                            if any(p in href_lower for p in ["/job/", "/vacancy/", "/opening/", "/posting/", "/job-details/", "/apply/"]) or "workdayjobs.com" in href_lower or "greenhouse.io" in href_lower or "lever.co" in href_lower:
+                                is_job = True
+                            elif any(p in href_lower for p in ["/jobs/", "/careers/", "/careers-at-"]):
+                                if not any(p in href_lower for p in ["/blog", "/culture", "/about", "/team", "/history", "/csm", "/support", "/help"]):
+                                    is_job = True
                             
                 if is_job:
                     if any(noise in text_lower for noise in ["sign in", "login", "cookie", "privacy", "about us", "terms", "faq", "contact", "home", "careers", "jobs"]):
@@ -717,6 +750,20 @@ def scrape_company_careers_page_smart(company_name, careers_url, sponsor_id=None
                         job_url = current_url.rstrip("/") + "/" + href
                     else:
                         job_url = href
+                        
+                    # Strict Domain Safety Check: Protect against external cookie support links (Google, Apple, etc.)
+                    parsed_job_url = urllib.parse.urlparse(job_url)
+                    job_domain = parsed_job_url.netloc.lower()
+                    base_domain_netloc = urllib.parse.urlparse(base_domain).netloc.lower()
+                    
+                    is_valid_domain = False
+                    if job_domain == base_domain_netloc or job_domain.endswith("." + base_domain_netloc):
+                        is_valid_domain = True
+                    elif any(ats in job_domain for ats in ["greenhouse.io", "lever.co", "myworkdayjobs.com", "workday.com", "softcat.com", "ey.com", "specsavers.co.uk", "barclays.co.uk"]):
+                        is_valid_domain = True
+                        
+                    if not is_valid_domain:
+                        continue
                         
                     if job_url in seen_job_urls:
                         continue
