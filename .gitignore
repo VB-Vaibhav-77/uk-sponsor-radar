@@ -1,0 +1,23 @@
+# Ignore SQLite database (cloud server will generate this dynamically)
+sponsors.db
+sponsors.db-journal
+sponsors.db-wal
+
+# Python compiled binaries
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# IDE configurations
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

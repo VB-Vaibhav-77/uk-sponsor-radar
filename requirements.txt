@@ -1,0 +1,3 @@
+# UK SponsorRadar Backend Dependencies
+# This project uses ONLY Python 3's built-in standard libraries (sqlite3, urllib, http.server, json, csv).
+# No external package installations are required!
