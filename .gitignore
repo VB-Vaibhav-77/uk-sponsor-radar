@@ -2,6 +2,10 @@
 sponsors.db
 sponsors.db-journal
 sponsors.db-wal
+jobs.db
+jobs.db-journal
+jobs.db-wal
+
 
 # Python compiled binaries
 __pycache__/

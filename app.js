@@ -1,106 +1,121 @@
 /* ==========================================================================
-   UK SPONSOR RADAR - INTERACTIVE JS FRONTEND ENGINE (FAANG PREMIUM)
+   ukSponsorJobs - Premium Client Core Engine (State & API Integrator)
    ========================================================================== */
 
-// -------------------------------------------------------------
-// ENVIRONMENT CONFIGURATION (SEAMLESS DEV / DEPLOY SWITCHING)
-// -------------------------------------------------------------
-// Points to localhost during development, and automatically switches to your live 
-// Render backend when deployed online. Replace the URL with your actual live Render link!
+// 1. CORE ENVIRONMENT & API ROUTER
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? '' 
     : 'https://uk-sponsor-radar-backend.onrender.com';
 
-// -------------------------------------------------------------
-// CORE STATE MANAGEMENT
-// -------------------------------------------------------------
+// 2. UNIFIED STATE MANAGEMENT
 let state = {
-    activeTab: 'explore', // explore, new, removed, bookmarks, analytics
-    searchQuery: '',
-    selectedRoute: '',
-    selectedRating: '',
-    selectedCity: '',
-    sortBy: 'organisation_name',
-    sortDir: 'asc',
-    currentPage: 1,
-    limitPerPage: 20,
+    // Current Navigation Tab: jobs, sponsors, bookmarks, analytics
+    activeTab: 'jobs',
+    
+    // Careers Jobs Board State
+    jobsSearchQuery: '',
+    jobsSelectedDept: '',
+    jobsSelectedLocation: '',
+    jobsCurrentPage: 1,
+    jobsTotalPages: 1,
+    jobsLimit: 15,
+    
+    // Sponsor Directory Checker State
+    sponsorSearchQuery: '',
+    sponsorSelectedRoute: '',
+    sponsorSelectedRating: '',
+    sponsorSelectedCity: '',
+    sponsorSortBy: 'organisation_name',
+    sponsorSortDir: 'asc',
+    sponsorCurrentPage: 1,
+    sponsorTotalPages: 1,
+    sponsorLimit: 20,
+    
+    // Bookmarks and Compare tray caches
     bookmarks: [],
-    compareList: [] // Array of up to 3 sponsor objects
+    compareList: [],
+    
+    // Debounce & Abort controller pipelines
+    searchDebounceTimer: null,
+    activeAbortController: null,
+    
+    // Analytics Metrics Cache
+    analyticsData: null
 };
 
-// Search Debouncer and REST Abort Controller
-let searchDebounceTimer;
-let activeAbortController = null;
-
-// -------------------------------------------------------------
-// SELECTORS
-// -------------------------------------------------------------
+// 3. SEAMLESS DOM SELECTOR BINDINGS
 const DOM = {
-    // Nav tabs
-    tabs: document.querySelectorAll('.tab-trigger'),
-    tabExplore: document.getElementById('tab-explore'),
-    tabNew: document.getElementById('tab-new'),
-    tabRemoved: document.getElementById('tab-removed'),
-    tabBookmarks: document.getElementById('tab-bookmarks'),
-    tabAnalytics: document.getElementById('tab-analytics'),
+    // Nav triggers
+    tabJobs: document.getElementById('btn-tab-jobs'),
+    tabSponsors: document.getElementById('btn-tab-sponsors'),
+    tabBookmarks: document.getElementById('btn-tab-bookmarks'),
+    tabAnalytics: document.getElementById('btn-tab-analytics'),
     
-    // Tab panes
-    paneExplore: document.getElementById('content-explore'),
-    paneAnalytics: document.getElementById('content-analytics'),
+    // Pane Containers
+    paneJobs: document.getElementById('pane-jobs'),
+    paneSponsors: document.getElementById('pane-sponsors'),
+    paneBookmarks: document.getElementById('pane-bookmarks'),
+    paneAnalytics: document.getElementById('pane-analytics'),
     
-    // Dynamic counts
-    badgeCountNew: document.getElementById('badge-count-new'),
-    badgeCountBookmarks: document.getElementById('badge-count-bookmarks'),
-    
-    // Stats cards
+    // Header & Global Metrics
+    statsTotalJobs: document.getElementById('stats-total-jobs'),
     statsTotalActive: document.getElementById('stats-total-active'),
     statsNewlyAdded: document.getElementById('stats-newly-added'),
-    statsTotalRemoved: document.getElementById('stats-total-removed'),
     statsSkilledWorker: document.getElementById('stats-skilled-worker'),
     statsSkilledWorkerRatio: document.getElementById('stats-skilled-worker-ratio'),
     syncStatusText: document.getElementById('sync-status-text'),
     manualSyncBtn: document.getElementById('manual-sync-btn'),
     
-    // Search & Filters panel
-    filterPanel: document.getElementById('filter-controls-panel'),
-    searchInput: document.getElementById('search-input'),
+    // Careers Jobs Board Elements
+    jobsSearchInput: document.getElementById('jobs-search-input'),
+    filterDept: document.getElementById('filter-dept'),
+    filterJobsCity: document.getElementById('filter-jobs-city'),
+    jobsGridContainer: document.getElementById('jobs-grid-container'),
+    jobsResultsCount: document.getElementById('jobs-results-count'),
+    jobsPaginationControls: document.getElementById('jobs-pagination-controls'),
+    
+    // Sponsor Directory Elements
+    sponsorsSearchInput: document.getElementById('sponsors-search-input'),
     searchClearBtn: document.getElementById('search-clear-btn'),
     resetFiltersBtn: document.getElementById('reset-filters-btn'),
     filterRoute: document.getElementById('filter-route'),
     filterRating: document.getElementById('filter-rating'),
     filterCity: document.getElementById('filter-city'),
     filterLimit: document.getElementById('filter-limit'),
-    
-    // Table listing
-    tableBody: document.getElementById('sponsor-table-body'),
+    sponsorTableBody: document.getElementById('sponsor-table-body'),
     tableLoading: document.getElementById('table-loading'),
     tableEmpty: document.getElementById('table-empty'),
-    paginationNav: document.getElementById('table-pagination-nav'),
+    tablePaginationNav: document.getElementById('table-pagination-nav'),
     paginationSummary: document.getElementById('pagination-summary'),
     pagFirst: document.getElementById('pag-first'),
     pagPrev: document.getElementById('pag-prev'),
     pagNext: document.getElementById('pag-next'),
     pagLast: document.getElementById('pag-last'),
     
-    // Table Headers for Sorting
+    // Table Sorting Headers
     thName: document.getElementById('th-name'),
     thCity: document.getElementById('th-city'),
     thRoute: document.getElementById('th-route'),
     thRating: document.getElementById('th-rating'),
     
-    // Compare Tray Drawer
+    // Starred Bookmarks Elements
+    badgeCountBookmarks: document.getElementById('badge-count-bookmarks'),
+    bookmarksEmpty: document.getElementById('bookmarks-empty'),
+    bookmarksTable: document.getElementById('bookmarks-table'),
+    bookmarksTableBody: document.getElementById('bookmarks-table-body'),
+    
+    // Compare Tray Elements
     compareBar: document.getElementById('compare-bar'),
     compareBadgeCount: document.getElementById('compare-badge-count'),
     compareClearBtn: document.getElementById('compare-clear-btn'),
     compareTriggerBtn: document.getElementById('compare-trigger-btn'),
     compareDrawerItems: document.getElementById('compare-drawer-items'),
     
-    // Compare Modal
+    // Modals & Panels overlays
     compareModal: document.getElementById('compare-modal'),
     compareModalClose: document.getElementById('compare-modal-close'),
     compareMatrixTable: document.getElementById('compare-matrix-table'),
     
-    // Details Modal/Drawer
     detailsModal: document.getElementById('details-modal'),
     detailsModalClose: document.getElementById('details-modal-close'),
     detailsStatusBadge: document.getElementById('details-status-badge'),
@@ -110,123 +125,270 @@ const DOM = {
     detailsRoute: document.getElementById('details-route'),
     detailsRatingBadge: document.getElementById('details-rating-badge'),
     detailsLastSeen: document.getElementById('details-last-seen'),
+    detailsModalBookmarkBtn: document.getElementById('details-modal-bookmark-btn'),
+    detailsModalCompareBtn: document.getElementById('details-modal-compare-btn'),
     
-    // Deep links buttons in modal
     btnSearchLinkedin: document.getElementById('btn-search-linkedin'),
     btnSearchIndeed: document.getElementById('btn-search-indeed'),
     btnSearchGlassdoor: document.getElementById('btn-search-glassdoor'),
     btnSearchGoogle: document.getElementById('btn-search-google'),
-    detailsModalBookmarkBtn: document.getElementById('details-modal-bookmark-btn'),
-    detailsModalCompareBtn: document.getElementById('details-modal-compare-btn'),
     
-    // Analytics elements
+    // Sliding Drawer Details
+    drawerOverlay: document.getElementById('drawer-overlay'),
+    detailsDrawer: document.getElementById('details-drawer'),
+    drawerContentBox: document.getElementById('drawer-content-box'),
+    
+    // Analytics Charts
     chartCitiesList: document.getElementById('chart-cities-list'),
     chartRoutesList: document.getElementById('chart-routes-list'),
-    chartRatingsList: document.getElementById('chart-ratings-list')
+    chartRatingsList: document.getElementById('chart-ratings-list'),
+    systemLogsList: document.getElementById('system-logs-list')
 };
 
-// -------------------------------------------------------------
-// EVENT LISTENER WIREUPS
-// -------------------------------------------------------------
+// 4. APPLICATION CORE INITIALIZATION
+window.addEventListener('DOMContentLoaded', () => {
+    initEvents();
+    loadBookmarks();
+    fetchStats();
+    fetchSponsorDropdowns();
+    fetchJobsFilters();
+    runSearch(); // Default searches jobs board
+});
+
+// 5. EVENT LISTENERS REGISTER
 function initEvents() {
-    // Tabs clicking
-    DOM.tabs.forEach(tab => {
-        tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+    // 5a. Primary Tab Switch routing
+    const tabs = [
+        { btn: DOM.tabJobs, tabId: 'jobs' },
+        { btn: DOM.tabSponsors, tabId: 'sponsors' },
+        { btn: DOM.tabBookmarks, tabId: 'bookmarks' },
+        { btn: DOM.tabAnalytics, tabId: 'analytics' }
+    ];
+    tabs.forEach(t => {
+        if (t.btn) {
+            t.btn.addEventListener('click', () => switchTab(t.tabId));
+        }
     });
     
-    // Search typing (debounced)
-    DOM.searchInput.addEventListener('input', (e) => {
-        state.searchQuery = e.target.value;
-        DOM.searchClearBtn.style.display = state.searchQuery ? 'block' : 'none';
-        
-        clearTimeout(searchDebounceTimer);
-        searchDebounceTimer = setTimeout(() => {
-            state.currentPage = 1;
-            loadData();
-        }, 250);
-    });
+    // 5b. Careers Jobs Board Search Event Handlers
+    if (DOM.jobsSearchInput) {
+        DOM.jobsSearchInput.addEventListener('input', (e) => {
+            state.jobsSearchQuery = e.target.value.trim();
+            state.jobsCurrentPage = 1;
+            
+            clearTimeout(state.searchDebounceTimer);
+            state.searchDebounceTimer = setTimeout(() => {
+                runSearch();
+            }, 250);
+        });
+    }
+    if (DOM.filterDept) {
+        DOM.filterDept.addEventListener('change', (e) => {
+            state.jobsSelectedDept = e.target.value;
+            state.jobsCurrentPage = 1;
+            runSearch();
+        });
+    }
+    if (DOM.filterJobsCity) {
+        DOM.filterJobsCity.addEventListener('change', (e) => {
+            state.jobsSelectedLocation = e.target.value;
+            state.jobsCurrentPage = 1;
+            runSearch();
+        });
+    }
     
-    // Clear search button
-    DOM.searchClearBtn.addEventListener('click', () => {
-        DOM.searchInput.value = '';
-        state.searchQuery = '';
-        DOM.searchClearBtn.style.display = 'none';
-        state.currentPage = 1;
-        loadData();
-    });
+    // 5c. Sponsor Directory Event Handlers
+    if (DOM.sponsorsSearchInput) {
+        DOM.sponsorsSearchInput.addEventListener('input', (e) => {
+            state.sponsorSearchQuery = e.target.value.trim();
+            DOM.searchClearBtn.style.display = state.sponsorSearchQuery ? 'block' : 'none';
+            state.sponsorCurrentPage = 1;
+            
+            clearTimeout(state.searchDebounceTimer);
+            state.searchDebounceTimer = setTimeout(() => {
+                runSearch();
+            }, 250);
+        });
+    }
+    if (DOM.searchClearBtn) {
+        DOM.searchClearBtn.addEventListener('click', () => {
+            DOM.sponsorsSearchInput.value = '';
+            state.sponsorSearchQuery = '';
+            DOM.searchClearBtn.style.display = 'none';
+            state.sponsorCurrentPage = 1;
+            runSearch();
+        });
+    }
+    if (DOM.resetFiltersBtn) {
+        DOM.resetFiltersBtn.addEventListener('click', resetSponsorFilters);
+    }
     
-    // Dropdown filters
-    DOM.filterRoute.addEventListener('change', (e) => {
-        state.selectedRoute = e.target.value;
-        state.currentPage = 1;
-        loadData();
-    });
-    DOM.filterRating.addEventListener('change', (e) => {
-        state.selectedRating = e.target.value;
-        state.currentPage = 1;
-        loadData();
-    });
-    DOM.filterCity.addEventListener('change', (e) => {
-        state.selectedCity = e.target.value;
-        state.currentPage = 1;
-        loadData();
-    });
-    DOM.filterLimit.addEventListener('change', (e) => {
-        state.limitPerPage = parseInt(e.target.value);
-        state.currentPage = 1;
-        loadData();
-    });
+    // Dropdown filters for Sponsors
+    if (DOM.filterRoute) {
+        DOM.filterRoute.addEventListener('change', (e) => {
+            state.sponsorSelectedRoute = e.target.value;
+            state.sponsorCurrentPage = 1;
+            runSearch();
+        });
+    }
+    if (DOM.filterRating) {
+        DOM.filterRating.addEventListener('change', (e) => {
+            state.sponsorSelectedRating = e.target.value;
+            state.sponsorCurrentPage = 1;
+            runSearch();
+        });
+    }
+    if (DOM.filterCity) {
+        DOM.filterCity.addEventListener('change', (e) => {
+            state.sponsorSelectedCity = e.target.value;
+            state.sponsorCurrentPage = 1;
+            runSearch();
+        });
+    }
+    if (DOM.filterLimit) {
+        DOM.filterLimit.addEventListener('change', (e) => {
+            state.sponsorLimit = parseInt(e.target.value);
+            state.sponsorCurrentPage = 1;
+            runSearch();
+        });
+    }
     
-    // Reset filters
-    DOM.resetFiltersBtn.addEventListener('click', resetFilters);
-    
-    // Sorting headers
-    const sortHeaders = [DOM.thName, DOM.thCity, DOM.thRoute, DOM.thRating];
+    // Headers sort triggers
+    const sortHeaders = [
+        { el: DOM.thName, key: 'organisation_name' },
+        { el: DOM.thCity, key: 'town_city' },
+        { el: DOM.thRoute, key: 'route' },
+        { el: DOM.thRating, key: 'rating' }
+    ];
     sortHeaders.forEach(th => {
-        th.addEventListener('click', () => handleSort(th.dataset.sort));
+        if (th.el) {
+            th.el.addEventListener('click', () => handleSort(th.key));
+        }
     });
     
-    // Pagination clicking
-    DOM.pagFirst.addEventListener('click', () => changePage('first'));
-    DOM.pagPrev.addEventListener('click', () => changePage('prev'));
-    DOM.pagNext.addEventListener('click', () => changePage('next'));
-    DOM.pagLast.addEventListener('click', () => changePage('last'));
+    // Pagination navigation for sponsors
+    if (DOM.pagFirst) DOM.pagFirst.addEventListener('click', () => changeSponsorsPage('first'));
+    if (DOM.pagPrev) DOM.pagPrev.addEventListener('click', () => changeSponsorsPage('prev'));
+    if (DOM.pagNext) DOM.pagNext.addEventListener('click', () => changeSponsorsPage('next'));
+    if (DOM.pagLast) DOM.pagLast.addEventListener('click', () => changeSponsorsPage('last'));
     
-    // Modals closing
-    DOM.detailsModalClose.addEventListener('click', () => DOM.detailsModal.style.display = 'none');
-    DOM.detailsModal.addEventListener('click', (e) => {
-        if (e.target === DOM.detailsModal) DOM.detailsModal.style.display = 'none';
-    });
+    // Modals closings
+    if (DOM.compareModalClose) DOM.compareModalClose.addEventListener('click', () => DOM.compareModal.style.display = 'none');
+    if (DOM.compareModal) {
+        DOM.compareModal.addEventListener('click', (e) => {
+            if (e.target === DOM.compareModal) DOM.compareModal.style.display = 'none';
+        });
+    }
     
-    DOM.compareModalClose.addEventListener('click', () => DOM.compareModal.style.display = 'none');
-    DOM.compareModal.addEventListener('click', (e) => {
-        if (e.target === DOM.compareModal) DOM.compareModal.style.display = 'none';
-    });
+    if (DOM.detailsModalClose) DOM.detailsModalClose.addEventListener('click', () => DOM.detailsModal.style.display = 'none');
+    if (DOM.detailsModal) {
+        DOM.detailsModal.addEventListener('click', (e) => {
+            if (e.target === DOM.detailsModal) DOM.detailsModal.style.display = 'none';
+        });
+    }
     
-    // Tray clear & compare trigger
-    DOM.compareClearBtn.addEventListener('click', clearCompareTray);
-    DOM.compareTriggerBtn.addEventListener('click', openCompareMatrix);
+    // Bottom Tray select events
+    if (DOM.compareClearBtn) DOM.compareClearBtn.addEventListener('click', clearCompareTray);
+    if (DOM.compareTriggerBtn) DOM.compareTriggerBtn.addEventListener('click', openCompareMatrix);
     
-    // Manual sync button
-    DOM.manualSyncBtn.addEventListener('click', triggerManualSync);
+    // Manual Database crawler sync triggers
+    if (DOM.manualSyncBtn) DOM.manualSyncBtn.addEventListener('click', triggerManualSync);
 }
 
-// -------------------------------------------------------------
-// CORE ROUTINES & REST CONNECTIONS
-// -------------------------------------------------------------
+// 6. TABS ROUTING SYSTEM
+function switchTab(tabId) {
+    state.activeTab = tabId;
+    
+    // Toggle active classes on navigation triggers
+    [DOM.tabJobs, DOM.tabSponsors, DOM.tabBookmarks, DOM.tabAnalytics].forEach(el => {
+        if (el) el.classList.toggle('active', el.dataset.tab === tabId);
+    });
+    
+    // Swapping viewport active cards
+    [DOM.paneJobs, DOM.paneSponsors, DOM.paneBookmarks, DOM.paneAnalytics].forEach(el => {
+        if (el) el.classList.toggle('active', el.id.includes(tabId));
+    });
+    
+    if (tabId === 'bookmarks') {
+        renderBookmarksTab();
+    } else if (tabId === 'analytics') {
+        renderAnalyticsCharts();
+    } else {
+        runSearch();
+    }
+}
 
+// 7. REST CONNECTIONS & DATA LOADERS
+async function runSearch() {
+    if (state.activeAbortController) {
+        state.activeAbortController.abort();
+    }
+    state.activeAbortController = new AbortController();
+    const signal = state.activeAbortController.signal;
+    
+    if (state.activeTab === 'jobs') {
+        toggleJobsLoading(true);
+        try {
+            const params = new URLSearchParams({
+                q: state.jobsSearchQuery,
+                dept: state.jobsSelectedDept,
+                city: state.jobsSelectedLocation,
+                page: state.jobsCurrentPage,
+                limit: state.jobsLimit
+            });
+            const res = await fetch(`${BACKEND_URL}/api/jobs?${params.toString()}`, { signal });
+            const data = await res.json();
+            
+            state.jobsTotalPages = data.meta.pages;
+            renderJobsFeed(data.jobs, data.meta);
+            renderJobsPagination();
+        } catch (e) {
+            if (e.name !== 'AbortError') {
+                console.error("Jobs search failed:", e);
+                showJobsError();
+            }
+        } finally {
+            toggleJobsLoading(false);
+        }
+    } else if (state.activeTab === 'sponsors') {
+        toggleSponsorsLoading(true);
+        try {
+            const params = new URLSearchParams({
+                q: state.sponsorSearchQuery,
+                route: state.sponsorSelectedRoute,
+                rating: state.sponsorSelectedRating,
+                city: state.sponsorSelectedCity,
+                page: state.sponsorCurrentPage,
+                limit: state.sponsorLimit,
+                sort_by: state.sponsorSortBy,
+                sort_dir: state.sponsorSortDir
+            });
+            const res = await fetch(`${BACKEND_URL}/api/sponsors?${params.toString()}`, { signal });
+            const data = await res.json();
+            
+            state.sponsorTotalPages = data.meta.pages;
+            renderSponsorsTable(data.sponsors);
+            updateSponsorsPaginationUI(data.meta);
+        } catch (e) {
+            if (e.name !== 'AbortError') {
+                console.error("Sponsors directory query failed:", e);
+                showSponsorsError();
+            }
+        } finally {
+            toggleSponsorsLoading(false);
+        }
+    }
+}
+
+// 8. DROPDOWNS & METRICS PULLERS
 async function fetchStats() {
     try {
         const res = await fetch(`${BACKEND_URL}/api/stats`);
         const data = await res.json();
         
-        // Update metric labels
         DOM.statsTotalActive.textContent = data.total_active.toLocaleString();
         DOM.statsNewlyAdded.textContent = data.newly_added.toLocaleString();
-        DOM.badgeCountNew.textContent = data.newly_added;
-        DOM.statsTotalRemoved.textContent = data.total_removed.toLocaleString();
         
-        // Find skilled worker counts
         const skilledWorkerObj = data.routes_distribution.find(r => r.route === 'Skilled Worker');
         const swCount = skilledWorkerObj ? skilledWorkerObj.count : 0;
         DOM.statsSkilledWorker.textContent = swCount.toLocaleString();
@@ -234,30 +396,30 @@ async function fetchStats() {
         const swRatio = data.total_active > 0 ? ((swCount / data.total_active) * 100).toFixed(1) : 0;
         DOM.statsSkilledWorkerRatio.textContent = `${swRatio}% of all sponsors`;
         
-        // Sync badge
         if (data.latest_sync) {
             DOM.syncStatusText.textContent = `GOV.UK Sync: ${data.latest_sync.sync_date}`;
         } else {
             DOM.syncStatusText.textContent = "Offline Database Mode";
         }
         
-        // Save analytics info for later rendering
         state.analyticsData = data;
         
-        if (state.activeTab === 'analytics') {
-            renderAnalyticsCharts();
+        // Push total vacancy count dynamically
+        const jobsRes = await fetch(`${BACKEND_URL}/api/jobs?limit=1`);
+        const jobsData = await jobsRes.json();
+        if (DOM.statsTotalJobs && jobsData.meta) {
+            DOM.statsTotalJobs.textContent = jobsData.meta.total.toLocaleString();
         }
     } catch (e) {
-        console.error("Error loading stats:", e);
+        console.error("Failed to fetch metric stats:", e);
     }
 }
 
-async function fetchFilterDropdowns() {
+async function fetchSponsorDropdowns() {
     try {
         const res = await fetch(`${BACKEND_URL}/api/filters`);
         const data = await res.json();
         
-        // Populate Routes
         DOM.filterRoute.innerHTML = '<option value="">All Sponsorship Routes</option>';
         data.routes.forEach(route => {
             const opt = document.createElement('option');
@@ -266,7 +428,6 @@ async function fetchFilterDropdowns() {
             DOM.filterRoute.appendChild(opt);
         });
         
-        // Populate Ratings
         DOM.filterRating.innerHTML = '<option value="">All Licence Ratings</option>';
         data.ratings.forEach(rating => {
             const opt = document.createElement('option');
@@ -275,7 +436,6 @@ async function fetchFilterDropdowns() {
             DOM.filterRating.appendChild(opt);
         });
         
-        // Populate Cities (Top 50 with counts)
         DOM.filterCity.innerHTML = '<option value="">All Towns & Cities</option>';
         data.top_cities.forEach(cityObj => {
             const opt = document.createElement('option');
@@ -284,111 +444,219 @@ async function fetchFilterDropdowns() {
             DOM.filterCity.appendChild(opt);
         });
     } catch (e) {
-        console.error("Error loading filter dropdowns:", e);
+        console.error("Error loading sponsor drop elements:", e);
     }
 }
 
-async function loadData() {
-    // Hides search panel on analytics tab
-    if (state.activeTab === 'analytics') return;
+async function fetchJobsFilters() {
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/jobs/filters`);
+        const data = await res.json();
+        
+        DOM.filterDept.innerHTML = '<option value="">All Departments</option>';
+        DOM.filterJobsCity.innerHTML = '<option value="">Any Location (UK)</option>';
+        
+        data.departments.forEach(dept => {
+            const opt = document.createElement('option');
+            opt.value = dept;
+            opt.textContent = dept;
+            DOM.filterDept.appendChild(opt);
+        });
+        
+        data.locations.forEach(loc => {
+            const opt = document.createElement('option');
+            opt.value = loc;
+            opt.textContent = loc;
+            DOM.filterJobsCity.appendChild(opt);
+        });
+    } catch (e) {
+        console.error("Error loading job board select filters:", e);
+    }
+}
+
+// 9. DYNAMIC JOBS FEED RENDERERS
+function renderJobsFeed(jobs, meta) {
+    DOM.jobsGridContainer.innerHTML = '';
+    DOM.jobsResultsCount.textContent = `${meta.total.toLocaleString()} live visa-sponsorship roles found`;
     
-    // Manage Loading indicators
-    DOM.tableBody.innerHTML = '';
-    DOM.tableEmpty.style.display = 'none';
-    DOM.tableLoading.style.display = 'flex';
-    DOM.paginationNav.style.opacity = '0.3';
-    
-    // Handle Bookmarks Tab locally for blistering speed
-    if (state.activeTab === 'bookmarks') {
-        renderBookmarksTab();
+    if (jobs.length === 0) {
+        DOM.jobsGridContainer.innerHTML = `
+            <div class="table-placeholder-state" style="grid-column: 1 / -1;">
+                <p>No sponsorship roles found matching your active criteria.</p>
+                <p style="font-size:12px; color:var(--text-muted);">Try resetting keywords or selecting general location hubs.</p>
+            </div>
+        `;
         return;
     }
     
-    // Cancel any current active fetching
-    if (activeAbortController) {
-        activeAbortController.abort();
-    }
-    activeAbortController = new AbortController();
-    
-    try {
-        // Build query string
-        let params = new URLSearchParams({
-            q: state.searchQuery,
-            route: state.selectedRoute,
-            rating: state.selectedRating,
-            city: state.selectedCity,
-            page: state.currentPage,
-            limit: state.limitPerPage,
-            sort_by: state.sortBy,
-            sort_dir: state.sortDir
-        });
+    jobs.forEach(job => {
+        const card = document.createElement('div');
+        card.className = 'job-card';
+        card.onclick = () => openJobDrawer(job);
         
-        // Tab-specific filters
-        if (state.activeTab === 'new') {
-            params.set('status', 'Newly Added');
-        } else if (state.activeTab === 'removed') {
-            params.set('status', 'Removed');
-        }
+        const daysAgo = getDaysAgo(job.posted_date);
+        const dateStr = daysAgo === 0 ? 'Today' : daysAgo === 1 ? '1 day ago' : `${daysAgo} days ago`;
         
-        const res = await fetch(`${BACKEND_URL}/api/sponsors?${params.toString()}`, {
-            signal: activeAbortController.signal
-        });
-        
-        const data = await res.json();
-        DOM.tableLoading.style.display = 'none';
-        DOM.paginationNav.style.opacity = '1';
-        
-        renderTableRows(data.sponsors);
-        updatePaginationUI(data.meta);
-        
-    } catch (e) {
-        if (e.name !== 'AbortError') {
-            console.error("Failed to retrieve sponsor dataset:", e);
-            DOM.tableLoading.style.display = 'none';
-            DOM.tableEmpty.style.display = 'flex';
-        }
-    }
+        card.innerHTML = `
+            <div class="job-card-header">
+                <div class="job-company">${escapeHTML(job.company_name)}</div>
+                <h3 class="job-title">${escapeHTML(job.job_title)}</h3>
+            </div>
+            <div class="job-badges">
+                <span class="badge badge-dept">${escapeHTML(job.department)}</span>
+                <span class="badge badge-loc">${escapeHTML(job.location)}</span>
+                <span class="badge badge-source">${escapeHTML(job.source)}</span>
+            </div>
+            <div class="job-card-footer">
+                <span>${dateStr}</span>
+                <span class="arrow-link">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                </span>
+            </div>
+        `;
+        DOM.jobsGridContainer.appendChild(card);
+    });
 }
 
-// -------------------------------------------------------------
-// TABLE RENDERERS
-// -------------------------------------------------------------
+function renderJobsPagination() {
+    DOM.jobsPaginationControls.innerHTML = '';
+    if (state.jobsTotalPages <= 1) return;
+    
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'pag-btn';
+    prevBtn.disabled = state.jobsCurrentPage === 1;
+    prevBtn.textContent = 'Prev';
+    prevBtn.onclick = () => {
+        state.jobsCurrentPage--;
+        runSearch();
+        window.scrollTo({ top: 350, behavior: 'smooth' });
+    };
+    DOM.jobsPaginationControls.appendChild(prevBtn);
+    
+    let startPage = Math.max(1, state.jobsCurrentPage - 2);
+    let endPage = Math.min(state.jobsTotalPages, startPage + 4);
+    if (endPage - startPage < 4) {
+        startPage = Math.max(1, endPage - 4);
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const btn = document.createElement('button');
+        btn.className = `pag-btn ${state.jobsCurrentPage === i ? 'active' : ''}`;
+        btn.textContent = i;
+        if (state.jobsCurrentPage === i) btn.style.background = 'var(--accent-primary)';
+        btn.onclick = () => {
+            state.jobsCurrentPage = i;
+            runSearch();
+            window.scrollTo({ top: 350, behavior: 'smooth' });
+        };
+        DOM.jobsPaginationControls.appendChild(btn);
+    }
+    
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'pag-btn';
+    nextBtn.disabled = state.jobsCurrentPage === state.jobsTotalPages;
+    nextBtn.textContent = 'Next';
+    nextBtn.onclick = () => {
+        state.jobsCurrentPage++;
+        runSearch();
+        window.scrollTo({ top: 350, behavior: 'smooth' });
+    };
+    DOM.jobsPaginationControls.appendChild(nextBtn);
+}
 
-function renderTableRows(sponsors) {
-    DOM.tableBody.innerHTML = '';
+// 10. SLIDING DETAILS SHEET DRAWER
+window.openJobDrawer = function(job) {
+    DOM.drawerContentBox.innerHTML = '';
+    
+    DOM.drawerContentBox.innerHTML = `
+        <div class="drawer-header">
+            <span class="drawer-company">${escapeHTML(job.company_name)}</span>
+            <h2 class="drawer-title">${escapeHTML(job.job_title)}</h2>
+        </div>
+        
+        <div class="drawer-meta-grid">
+            <div class="drawer-meta-item">
+                <span class="meta-item-label">Job Category</span>
+                <span class="meta-item-value">${escapeHTML(job.department)}</span>
+            </div>
+            <div class="drawer-meta-item">
+                <span class="meta-item-label">Location</span>
+                <span class="meta-item-value">${escapeHTML(job.location)}</span>
+            </div>
+            <div class="drawer-meta-item">
+                <span class="meta-item-label">Source Sync</span>
+                <span class="meta-item-value">${escapeHTML(job.source)}</span>
+            </div>
+            <div class="drawer-meta-item">
+                <span class="meta-item-label">Visa Route</span>
+                <span class="meta-item-value">Skilled Worker (Sponsorship)</span>
+            </div>
+        </div>
+        
+        <div class="drawer-desc-block">
+            <span class="drawer-desc-title">Job Details & Description</span>
+            <div class="drawer-desc-content">
+                ${job.description ? job.description : `
+                    <p>Detailed job listing for <strong>${escapeHTML(job.job_title)}</strong> is hosted directly on the employer's official careers site.</p>
+                    <p><strong>${escapeHTML(job.company_name)}</strong> is a fully-certified UK Home Office visa sponsor. Click the primary apply button below to view full details and submit your application.</p>
+                `}
+            </div>
+        </div>
+        
+        <div class="action-btn-container">
+            <button class="btn-primary-glow" onclick="window.open('${job.job_url}', '_blank')">
+                Apply on Company Site
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </button>
+            <button class="btn-secondary-border" onclick="window.open('https://www.google.com/search?q=${encodeURIComponent(job.company_name)}+careers+jobs', '_blank')">
+                Research Company on Google
+            </button>
+        </div>
+    `;
+    
+    toggleDrawer(true);
+};
+
+function toggleDrawer(isOpen) {
+    DOM.detailsDrawer.classList.toggle('active', isOpen);
+    DOM.drawerOverlay.classList.toggle('active', isOpen);
+}
+
+window.closeDrawer = function() {
+    toggleDrawer(false);
+};
+
+// 11. SPONSORS TABLE RENDERING
+function renderSponsorsTable(sponsors) {
+    DOM.sponsorTableBody.innerHTML = '';
     
     if (!sponsors || sponsors.length === 0) {
         DOM.tableEmpty.style.display = 'flex';
-        DOM.paginationNav.style.display = 'none';
+        DOM.tablePaginationNav.style.display = 'none';
         return;
     }
     
     DOM.tableEmpty.style.display = 'none';
-    DOM.paginationNav.style.display = 'flex';
+    DOM.tablePaginationNav.style.display = 'flex';
     
     sponsors.forEach(s => {
         const tr = document.createElement('tr');
         tr.dataset.id = s.id;
         
-        // Name Cell
         const tdName = document.createElement('td');
         tdName.className = 'company-name-cell';
         tdName.textContent = s.organisation_name;
         
-        // City Cell
         const tdCity = document.createElement('td');
         tdCity.textContent = s.town_city || '—';
         
-        // Route Cell
         const tdRoute = document.createElement('td');
         tdRoute.textContent = s.route;
         
-        // Rating Cell
         const tdRating = document.createElement('td');
         const ratingClass = s.rating.includes('A rating') ? 'badge-rating-a' : 'badge-rating-b';
         tdRating.innerHTML = `<span class="badge-rating ${ratingClass}">${s.rating}</span>`;
         
-        // Actions Cell
         const tdActions = document.createElement('td');
         tdActions.className = 'align-center';
         
@@ -402,7 +670,7 @@ function renderTableRows(sponsors) {
                         <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
                     </svg>
                 </button>
-                <button class="icon-btn-view" title="Open Sponsor Dashboard">
+                <button class="icon-btn-view" title="Open Sponsor details">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
                     </svg>
@@ -416,14 +684,12 @@ function renderTableRows(sponsors) {
         tr.appendChild(tdRating);
         tr.appendChild(tdActions);
         
-        // Wire detail modal clicking
         tr.addEventListener('click', () => openSponsorDetails(s));
-        
-        DOM.tableBody.appendChild(tr);
+        DOM.sponsorTableBody.appendChild(tr);
     });
 }
 
-function updatePaginationUI(meta) {
+function updateSponsorsPaginationUI(meta) {
     DOM.paginationSummary.textContent = `Page ${meta.page} of ${meta.pages || 1}`;
     
     DOM.pagFirst.disabled = meta.page <= 1;
@@ -431,41 +697,50 @@ function updatePaginationUI(meta) {
     DOM.pagNext.disabled = meta.page >= meta.pages;
     DOM.pagLast.disabled = meta.page >= meta.pages;
     
-    state.totalPages = meta.pages;
+    state.sponsorTotalPages = meta.pages;
 }
 
-function changePage(direction) {
-    if (direction === 'first') state.currentPage = 1;
-    else if (direction === 'prev' && state.currentPage > 1) state.currentPage--;
-    else if (direction === 'next' && state.currentPage < state.totalPages) state.currentPage++;
-    else if (direction === 'last') state.currentPage = state.totalPages;
+function changeSponsorsPage(dir) {
+    if (dir === 'first') state.sponsorCurrentPage = 1;
+    else if (dir === 'prev' && state.sponsorCurrentPage > 1) state.sponsorCurrentPage--;
+    else if (dir === 'next' && state.sponsorCurrentPage < state.sponsorTotalPages) state.sponsorCurrentPage++;
+    else if (dir === 'last') state.sponsorCurrentPage = state.sponsorTotalPages;
     
-    loadData();
+    runSearch();
 }
 
-// -------------------------------------------------------------
-// SORTING HANDLERS
-// -------------------------------------------------------------
-function handleSort(column) {
-    // Reset caret symbols
-    DOM.thName.querySelector('.sort-icon').textContent = '';
-    DOM.thCity.querySelector('.sort-icon').textContent = '';
-    DOM.thRoute.querySelector('.sort-icon').textContent = '';
-    DOM.thRating.querySelector('.sort-icon').textContent = '';
+function resetSponsorFilters() {
+    DOM.sponsorsSearchInput.value = '';
+    DOM.filterRoute.value = '';
+    DOM.filterRating.value = '';
+    DOM.filterCity.value = '';
+    DOM.filterLimit.value = '20';
     
-    DOM.thName.classList.remove('active');
-    DOM.thCity.classList.remove('active');
-    DOM.thRoute.classList.remove('active');
-    DOM.thRating.classList.remove('active');
+    state.sponsorSearchQuery = '';
+    state.sponsorSelectedRoute = '';
+    state.sponsorSelectedRating = '';
+    state.sponsorSelectedCity = '';
+    state.sponsorLimit = 20;
+    state.sponsorCurrentPage = 1;
+    DOM.searchClearBtn.style.display = 'none';
     
-    if (state.sortBy === column) {
-        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+    runSearch();
+}
+
+function handleSort(col) {
+    if (state.sponsorSortBy === col) {
+        state.sponsorSortDir = state.sponsorSortDir === 'asc' ? 'desc' : 'asc';
     } else {
-        state.sortBy = column;
-        state.sortDir = 'asc';
+        state.sponsorSortBy = col;
+        state.sponsorSortDir = 'asc';
     }
     
-    // Style active sorted header
+    // Sort caret icons update
+    [DOM.thName, DOM.thCity, DOM.thRoute, DOM.thRating].forEach(th => {
+        th.querySelector('.sort-icon').textContent = '';
+        th.classList.remove('active');
+    });
+    
     const thMap = {
         'organisation_name': DOM.thName,
         'town_city': DOM.thCity,
@@ -473,69 +748,149 @@ function handleSort(column) {
         'rating': DOM.thRating
     };
     
-    const activeTh = thMap[column];
-    activeTh.classList.add('active');
-    activeTh.querySelector('.sort-icon').textContent = state.sortDir === 'desc' ? '▼' : '▲';
+    const th = thMap[col];
+    th.classList.add('active');
+    th.querySelector('.sort-icon').textContent = state.sponsorSortDir === 'desc' ? '▼' : '▲';
     
-    state.currentPage = 1;
-    loadData();
+    state.sponsorCurrentPage = 1;
+    runSearch();
 }
 
-// -------------------------------------------------------------
-// TAB SYSTEM ROUTINES
-// -------------------------------------------------------------
-function switchTab(tabId) {
-    state.activeTab = tabId;
-    state.currentPage = 1;
+// 12. DETAILED SPONSOR MATRIX OVERLAYS
+function openSponsorDetails(s) {
+    DOM.detailsName.textContent = s.organisation_name;
+    DOM.detailsCity.textContent = s.town_city || '—';
+    DOM.detailsCounty.textContent = s.county || '—';
+    DOM.detailsRoute.textContent = s.route;
+    DOM.detailsRatingBadge.textContent = s.rating;
+    DOM.detailsLastSeen.textContent = s.last_seen || s.date_added || '—';
     
-    // Update active tab buttons
-    DOM.tabs.forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.tab === tabId);
+    // Style active rating badge
+    const ratingClass = s.rating.includes('A rating') ? 'badge-rating-a' : 'badge-rating-b';
+    DOM.detailsRatingBadge.className = `info-val badge-rating ${ratingClass}`;
+    
+    // Configure smart deep link research anchors
+    const encName = encodeURIComponent(s.organisation_name);
+    DOM.btnSearchLinkedin.href = `https://www.linkedin.com/jobs/search/?keywords=${encName}`;
+    DOM.btnSearchIndeed.href = `https://www.indeed.co.uk/jobs?q=${encName}`;
+    DOM.btnSearchGlassdoor.href = `https://www.glassdoor.co.uk/Search/results.htm?keyword=${encName}`;
+    DOM.btnSearchGoogle.href = `https://www.google.com/search?q=${encName}`;
+    
+    // Star toggle states inside modal
+    const isStarred = state.bookmarks.some(b => b.id === s.id);
+    DOM.detailsModalBookmarkBtn.innerHTML = isStarred ? 'Remove Bookmark' : 'Bookmark Sponsor';
+    DOM.detailsModalBookmarkBtn.onclick = () => {
+        toggleBookmark(s);
+        const starred = state.bookmarks.some(b => b.id === s.id);
+        DOM.detailsModalBookmarkBtn.innerHTML = starred ? 'Remove Bookmark' : 'Bookmark Sponsor';
+    };
+    
+    // Compare matrix toggle states inside modal
+    const matchingCompare = state.compareList.some(comp => comp.id === s.id);
+    DOM.detailsModalCompareBtn.innerHTML = matchingCompare ? 'Remove Compare' : 'Add to Compare';
+    DOM.detailsModalCompareBtn.onclick = () => {
+        toggleCompare(s);
+        const insideCompare = state.compareList.some(comp => comp.id === s.id);
+        DOM.detailsModalCompareBtn.innerHTML = insideCompare ? 'Remove Compare' : 'Add to Compare';
+    };
+    
+    DOM.detailsModal.style.display = 'flex';
+}
+
+// 13. COMPARISONS SYSTEMS
+function toggleCompare(sponsor) {
+    const idx = state.compareList.findIndex(c => c.id === sponsor.id);
+    if (idx > -1) {
+        state.compareList.splice(idx, 1);
+    } else {
+        if (state.compareList.length >= 3) {
+            alert("Comparison matrix is capped at a maximum of 3 sponsors.");
+            return;
+        }
+        state.compareList.push(sponsor);
+    }
+    renderCompareTray();
+}
+
+function renderCompareTray() {
+    const len = state.compareList.length;
+    if (len === 0) {
+        DOM.compareBar.style.display = 'none';
+        return;
+    }
+    DOM.compareBar.style.display = 'flex';
+    DOM.compareBadgeCount.textContent = `${len} / 3`;
+    
+    DOM.compareDrawerItems.innerHTML = '';
+    state.compareList.forEach(s => {
+        const bubble = document.createElement('div');
+        bubble.className = 'compare-item-bubble';
+        bubble.innerHTML = `
+            <span class="compare-bubble-name">${escapeHTML(s.organisation_name)}</span>
+            <button class="btn-remove-bubble" onclick="removeCompareItem(${s.id})">&times;</button>
+        `;
+        DOM.compareDrawerItems.appendChild(bubble);
+    });
+}
+
+window.removeCompareItem = function(id) {
+    state.compareList = state.compareList.filter(c => c.id !== id);
+    renderCompareTray();
+    
+    // Sync modals toggle inner button label if open
+    if (DOM.detailsModal.style.display === 'flex') {
+        const nameText = DOM.detailsName.textContent;
+        const matchingCompare = state.compareList.some(s => s.organisation_name === nameText);
+        DOM.detailsModalCompareBtn.innerHTML = matchingCompare ? 'Remove Compare' : 'Add to Compare';
+    }
+};
+
+function clearCompareTray() {
+    state.compareList = [];
+    renderCompareTray();
+}
+
+function openCompareMatrix() {
+    if (state.compareList.length === 0) return;
+    DOM.compareMatrixTable.innerHTML = '';
+    
+    const trHeaders = document.createElement('tr');
+    trHeaders.innerHTML = '<th>Feature</th>';
+    state.compareList.forEach(s => {
+        trHeaders.innerHTML += `<th class="compare-col-header">${escapeHTML(s.organisation_name)}</th>`;
+    });
+    DOM.compareMatrixTable.appendChild(trHeaders);
+    
+    const features = [
+        { label: 'Town / City', key: 'town_city' },
+        { label: 'County', key: 'county' },
+        { label: 'Sponsorship Route', key: 'route' },
+        { label: 'Licence Rating', key: 'rating' },
+        { label: 'Sync Status', key: 'status' }
+    ];
+    
+    features.forEach(f => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${f.label}</td>`;
+        
+        state.compareList.forEach(s => {
+            let val = s[f.key] || '—';
+            if (f.key === 'rating') {
+                const ratingClass = val.includes('A rating') ? 'badge-rating-a' : 'badge-rating-b';
+                val = `<span class="badge-rating ${ratingClass}">${val}</span>`;
+            } else if (f.key === 'status') {
+                const statusClass = val === 'Active' ? 'badge-active' : val === 'Newly Added' ? 'badge-new' : 'badge-removed';
+                val = `<span class="badge-status ${statusClass}">${val}</span>`;
+            }
+            tr.innerHTML += `<td>${val}</td>`;
+        });
+        DOM.compareMatrixTable.appendChild(tr);
     });
     
-    // Show/Hide search filters panel
-    if (tabId === 'analytics') {
-        DOM.filterPanel.style.display = 'none';
-        DOM.paneExplore.classList.remove('active');
-        DOM.paneAnalytics.classList.add('active');
-        renderAnalyticsCharts();
-    } else {
-        DOM.filterPanel.style.display = 'flex';
-        DOM.paneExplore.classList.add('active');
-        DOM.paneAnalytics.classList.remove('active');
-        
-        // Hide standard filters that don't apply to Removed sponsors
-        if (tabId === 'removed') {
-            DOM.filterRating.parentElement.style.display = 'none';
-        } else {
-            DOM.filterRating.parentElement.style.display = 'flex';
-        }
-        
-        loadData();
-    }
+    DOM.compareModal.style.display = 'flex';
 }
 
-function resetFilters() {
-    DOM.searchInput.value = '';
-    DOM.filterRoute.value = '';
-    DOM.filterRating.value = '';
-    DOM.filterCity.value = '';
-    DOM.filterLimit.value = '20';
-    
-    state.searchQuery = '';
-    state.selectedRoute = '';
-    state.selectedRating = '';
-    state.selectedCity = '';
-    state.limitPerPage = 20;
-    state.currentPage = 1;
-    DOM.searchClearBtn.style.display = 'none';
-    
-    loadData();
-}
-
-// -------------------------------------------------------------
-// BOOKMARK CONTROLLERS
-// -------------------------------------------------------------
+// 14. LOCAL BOOKMARKS CONTROLLER
 function loadBookmarks() {
     const raw = localStorage.getItem('uk_sponsor_bookmarks');
     state.bookmarks = raw ? JSON.parse(raw) : [];
@@ -547,10 +902,9 @@ function updateBookmarkBadge() {
 }
 
 window.toggleBookmark = function(sponsor) {
-    const index = state.bookmarks.findIndex(b => b.id === sponsor.id);
-    
-    if (index > -1) {
-        state.bookmarks.splice(index, 1);
+    const idx = state.bookmarks.findIndex(b => b.id === sponsor.id);
+    if (idx > -1) {
+        state.bookmarks.splice(idx, 1);
     } else {
         state.bookmarks.push(sponsor);
     }
@@ -558,366 +912,198 @@ window.toggleBookmark = function(sponsor) {
     localStorage.setItem('uk_sponsor_bookmarks', JSON.stringify(state.bookmarks));
     updateBookmarkBadge();
     
-    // Re-render table if on explore or bookmarks tab
     if (state.activeTab === 'bookmarks') {
         renderBookmarksTab();
-    } else {
-        // Find star button on row and toggle classes
-        const rows = DOM.tableBody.querySelectorAll('tr');
-        rows.forEach(tr => {
-            if (parseInt(tr.dataset.id) === sponsor.id) {
-                const btn = tr.querySelector('.icon-btn-star');
-                const isStarred = state.bookmarks.some(b => b.id === sponsor.id);
-                btn.classList.toggle('starred', isStarred);
-                btn.querySelector('svg').setAttribute('fill', isStarred ? 'currentColor' : 'none');
-            }
-        });
+    } else if (state.activeTab === 'sponsors') {
+        runSearch();
     }
 };
 
 function renderBookmarksTab() {
-    DOM.tableLoading.style.display = 'none';
-    DOM.paginationNav.style.display = 'none'; // No server pagination for local bookmarks
+    DOM.bookmarksEmpty.style.display = state.bookmarks.length === 0 ? 'flex' : 'none';
+    DOM.bookmarksTable.style.display = state.bookmarks.length === 0 ? 'none' : 'table';
+    DOM.bookmarksTableBody.innerHTML = '';
     
-    // Client side filter bookmarks based on search and selected options
-    let filtered = [...state.bookmarks];
-    
-    if (state.searchQuery) {
-        const q = state.searchQuery.toLowerCase();
-        filtered = filtered.filter(b => b.organisation_name.toLowerCase().includes(q));
-    }
-    if (state.selectedRoute) {
-        filtered = filtered.filter(b => b.route === state.selectedRoute);
-    }
-    if (state.selectedRating) {
-        filtered = filtered.filter(b => b.rating === state.selectedRating);
-    }
-    if (state.selectedCity) {
-        filtered = filtered.filter(b => b.town_city === state.selectedCity);
-    }
-    
-    renderTableRows(filtered);
-}
-
-// -------------------------------------------------------------
-// SPONSOR COMPARE CONTROLLERS
-// -------------------------------------------------------------
-function toggleCompare(sponsor) {
-    const idx = state.compareList.findIndex(c => c.id === sponsor.id);
-    
-    if (idx > -1) {
-        // Remove
-        state.compareList.splice(idx, 1);
-    } else {
-        // Add (Max 3)
-        if (state.compareList.length >= 3) {
-            alert("Comparison matrix is capped at a maximum of 3 sponsors.");
-            return;
-        }
-        state.compareList.push(sponsor);
-    }
-    
-    renderCompareTray();
-}
-
-function renderCompareTray() {
-    const len = state.compareList.length;
-    
-    if (len === 0) {
-        DOM.compareBar.style.display = 'none';
-        return;
-    }
-    
-    DOM.compareBar.style.display = 'flex';
-    DOM.compareBadgeCount.textContent = `${len} / 3`;
-    
-    DOM.compareDrawerItems.innerHTML = '';
-    state.compareList.forEach(s => {
-        const bubble = document.createElement('div');
-        bubble.className = 'compare-item-bubble';
-        
-        bubble.innerHTML = `
-            <span class="compare-bubble-name">${s.organisation_name}</span>
-            <button class="btn-remove-bubble" onclick="removeCompareItem(${s.id})">&times;</button>
-        `;
-        DOM.compareDrawerItems.appendChild(bubble);
-    });
-}
-
-window.removeCompareItem = function(id) {
-    state.compareList = state.compareList.filter(c => c.id !== id);
-    renderCompareTray();
-    
-    // Update details modal button if active
-    if (DOM.detailsModal.style.display === 'flex') {
-        const nameText = DOM.detailsName.textContent;
-        const matchingSponsor = state.compareList.some(s => s.organisation_name === nameText);
-        DOM.detailsModalCompareBtn.classList.toggle('btn-indigo', !matchingSponsor);
-        DOM.detailsModalCompareBtn.classList.toggle('btn-outline', matchingSponsor);
-        DOM.detailsModalCompareBtn.innerHTML = matchingSponsor ? 'Added to Compare' : 'Add to Compare';
-    }
-};
-
-function clearCompareTray() {
-    state.compareList = [];
-    renderCompareTray();
-}
-
-function openCompareMatrix() {
-    if (state.compareList.length === 0) return;
-    
-    DOM.compareMatrixTable.innerHTML = '';
-    DOM.compareModal.style.display = 'flex';
-    
-    // Table Headers
-    const trHeaders = document.createElement('tr');
-    trHeaders.innerHTML = '<th>Feature</th>';
-    state.compareList.forEach(s => {
-        trHeaders.innerHTML += `<th class="compare-col-header">${s.organisation_name}</th>`;
-    });
-    DOM.compareMatrixTable.appendChild(trHeaders);
-    
-    // Feature rows definitions
-    const features = [
-        { label: 'Town / City', key: 'town_city' },
-        { label: 'County', key: 'county' },
-        { label: 'Sponsorship Route', key: 'route' },
-        { label: 'Compliance Rating', key: 'rating' },
-        { label: 'Licence Status', key: 'status' }
-    ];
-    
-    features.forEach(f => {
+    state.bookmarks.forEach(s => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${f.label}</td>`;
+        tr.onclick = () => openSponsorDetails(s);
         
-        state.compareList.forEach(s => {
-            let val = s[f.key] || '—';
-            
-            // Format badges for Rating and Status
-            if (f.key === 'rating') {
-                const ratingClass = val.includes('A rating') ? 'badge-rating-a' : 'badge-rating-b';
-                val = `<span class="badge-rating ${ratingClass}">${val}</span>`;
-            } else if (f.key === 'status') {
-                const statusClass = val === 'Newly Added' ? 'badge-new' : (val === 'Removed' ? 'badge-removed' : 'badge-active');
-                val = `<span class="badge-status ${statusClass}">${val}</span>`;
-            }
-            
-            tr.innerHTML += `<td>${val}</td>`;
-        });
-        
-        DOM.compareMatrixTable.appendChild(tr);
-    });
-    
-    // Add Row for Quick Job Research platform links
-    const trResearch = document.createElement('tr');
-    trResearch.innerHTML = '<td>Job Search Hub</td>';
-    state.compareList.forEach(s => {
-        const ln = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(s.organisation_name + ' UK')}`;
-        const ind = `https://uk.indeed.com/jobs?q=${encodeURIComponent(s.organisation_name)}`;
-        const gd = `https://www.glassdoor.co.uk/Search/results.htm?keyword=${encodeURIComponent(s.organisation_name)}`;
-        
-        trResearch.innerHTML += `
-            <td>
-                <div class="compare-research-actions">
-                    <a href="${ln}" target="_blank" class="research-btn btn-linkedin" style="padding:8px">LinkedIn</a>
-                    <a href="${ind}" target="_blank" class="research-btn btn-indeed" style="padding:8px">Indeed</a>
-                    <a href="${gd}" target="_blank" class="research-btn btn-glassdoor" style="padding:8px">Glassdoor</a>
-                </div>
+        tr.innerHTML = `
+            <td class="company-name-cell">${escapeHTML(s.organisation_name)}</td>
+            <td>${s.town_city || '—'}</td>
+            <td>${s.route}</td>
+            <td><span class="badge-rating badge-rating-a">${s.rating}</span></td>
+            <td class="align-center">
+                <button class="icon-btn-star starred" onclick="event.stopPropagation(); toggleBookmark(${JSON.stringify(s).replace(/"/g, '&quot;')})">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2">
+                        <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
+                    </svg>
+                </button>
             </td>
         `;
+        DOM.bookmarksTableBody.appendChild(tr);
     });
-    DOM.compareMatrixTable.appendChild(trResearch);
 }
 
-// -------------------------------------------------------------
-// DETAIL MODAL DRAWER
-// -------------------------------------------------------------
-function openSponsorDetails(sponsor) {
-    DOM.detailsModal.style.display = 'flex';
-    
-    // Fill texts
-    DOM.detailsName.textContent = sponsor.organisation_name;
-    DOM.detailsCity.textContent = sponsor.town_city || '—';
-    DOM.detailsCounty.textContent = sponsor.county || '—';
-    DOM.detailsRoute.textContent = sponsor.route;
-    DOM.detailsLastSeen.textContent = sponsor.last_seen || '—';
-    
-    // Rating badge style
-    const ratingText = sponsor.rating;
-    DOM.detailsRatingBadge.textContent = ratingText;
-    DOM.detailsRatingBadge.className = 'info-val badge-rating ' + (ratingText.includes('A rating') ? 'badge-rating-a' : 'badge-rating-b');
-    
-    // Status style
-    const status = sponsor.status;
-    DOM.detailsStatusBadge.textContent = status;
-    DOM.detailsStatusBadge.className = 'badge-status-lg ' + (status === 'Newly Added' ? 'badge-new' : (status === 'Removed' ? 'badge-removed' : 'badge-active'));
-    
-    // Configure Job Research platform buttons URLs
-    DOM.btnSearchLinkedin.href = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(sponsor.organisation_name + ' UK')}`;
-    DOM.btnSearchIndeed.href = `https://uk.indeed.com/jobs?q=${encodeURIComponent(sponsor.organisation_name)}`;
-    DOM.btnSearchGlassdoor.href = `https://www.glassdoor.co.uk/Search/results.htm?keyword=${encodeURIComponent(sponsor.organisation_name)}`;
-    DOM.btnSearchGoogle.href = `https://www.google.com/search?q=${encodeURIComponent(sponsor.organisation_name + ' UK corporate website')}`;
-    
-    // Star toggle button
-    const isStarred = state.bookmarks.some(b => b.id === sponsor.id);
-    DOM.detailsModalBookmarkBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="${isStarred ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
-        </svg>
-        ${isStarred ? 'Bookmarked' : 'Bookmark Sponsor'}
-    `;
-    DOM.detailsModalBookmarkBtn.className = isStarred ? 'btn btn-outline-indigo' : 'btn btn-outline-indigo';
-    DOM.detailsModalBookmarkBtn.onclick = () => {
-        toggleBookmark(sponsor);
-        openSponsorDetails(sponsor); // Reload button state in modal
-    };
-    
-    // Compare button state toggle
-    const inCompare = state.compareList.some(c => c.id === sponsor.id);
-    DOM.detailsModalCompareBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 21v-8"/><path d="M21 21H3"/></svg>
-        ${inCompare ? 'Added to Compare' : 'Add to Compare'}
-    `;
-    DOM.detailsModalCompareBtn.className = inCompare ? 'btn btn-outline' : 'btn btn-indigo';
-    DOM.detailsModalCompareBtn.onclick = () => {
-        toggleCompare(sponsor);
-        openSponsorDetails(sponsor); // Reload button state
-    };
-}
-
-// -------------------------------------------------------------
-// ANALYTICS PROGRESS CHARTS
-// -------------------------------------------------------------
+// 15. VISUAL METRICS CHARTS RENDERING
 function renderAnalyticsCharts() {
+    if (!state.analyticsData) return;
     const data = state.analyticsData;
-    if (!data) return;
     
-    // Render top cities
+    // Top Cities progress
     DOM.chartCitiesList.innerHTML = '';
-    if (data.cities_distribution && data.cities_distribution.length > 0) {
-        const maxCity = data.cities_distribution[0].count;
-        data.cities_distribution.forEach(c => {
-            const pct = maxCity > 0 ? ((c.count / maxCity) * 100) : 0;
-            const row = document.createElement('div');
-            row.className = 'progress-chart-row';
-            row.innerHTML = `
-                <div class="progress-labels">
-                    <span class="progress-label-name">${c.town_city}</span>
-                    <span class="progress-label-val">${c.count.toLocaleString()}</span>
-                </div>
-                <div class="progress-bar-bg">
-                    <div class="progress-bar-fill fill-indigo" style="width: 0%" data-width="${pct}%"></div>
-                </div>
-            `;
-            DOM.chartCitiesList.appendChild(row);
-        });
-    }
+    const maxCityVal = data.cities_distribution[0] ? data.cities_distribution[0].count : 1;
+    data.cities_distribution.forEach(c => {
+        const row = document.createElement('div');
+        row.className = 'progress-chart-row';
+        const pct = (c.count / maxCityVal) * 100;
+        
+        row.innerHTML = `
+            <div class="progress-labels">
+                <span class="progress-label-name">${c.town_city}</span>
+                <span class="progress-label-val">${c.count.toLocaleString()}</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill fill-indigo" style="width: ${pct}%"></div>
+            </div>
+        `;
+        DOM.chartCitiesList.appendChild(row);
+    });
     
-    // Render routes
+    // Route Distributions progress
     DOM.chartRoutesList.innerHTML = '';
-    if (data.routes_distribution && data.routes_distribution.length > 0) {
-        const maxRoute = data.routes_distribution[0].count;
-        data.routes_distribution.forEach(r => {
-            const pct = maxRoute > 0 ? ((r.count / maxRoute) * 100) : 0;
-            const row = document.createElement('div');
-            row.className = 'progress-chart-row';
-            row.innerHTML = `
-                <div class="progress-labels">
-                    <span class="progress-label-name">${r.route}</span>
-                    <span class="progress-label-val">${r.count.toLocaleString()}</span>
-                </div>
-                <div class="progress-bar-bg">
-                    <div class="progress-bar-fill fill-violet" style="width: 0%" data-width="${pct}%"></div>
-                </div>
-            `;
-            DOM.chartRoutesList.appendChild(row);
-        });
-    }
+    const maxRouteVal = data.routes_distribution[0] ? data.routes_distribution[0].count : 1;
+    data.routes_distribution.forEach(r => {
+        const row = document.createElement('div');
+        row.className = 'progress-chart-row';
+        const pct = (r.count / maxRouteVal) * 100;
+        
+        row.innerHTML = `
+            <div class="progress-labels">
+                <span class="progress-label-name">${r.route}</span>
+                <span class="progress-label-val">${r.count.toLocaleString()}</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill fill-emerald" style="width: ${pct}%"></div>
+            </div>
+        `;
+        DOM.chartRoutesList.appendChild(row);
+    });
     
-    // Render ratings breakdown
+    // Compliance breakdown progress
     DOM.chartRatingsList.innerHTML = '';
-    if (data.ratings_distribution && data.ratings_distribution.length > 0) {
-        DOM.chartRatingsList.className = 'rating-pie-grid';
-        data.ratings_distribution.forEach(r => {
-            const pct = data.total_active > 0 ? ((r.count / data.total_active) * 100).toFixed(1) : 0;
-            const row = document.createElement('div');
-            row.className = 'rating-bar-group';
-            
-            const fillType = r.rating.includes('A rating') ? 'fill-emerald' : 'fill-amber';
-            const labelClass = r.rating.includes('A rating') ? 'text-emerald' : 'text-amber';
-            
-            row.innerHTML = `
-                <div class="rating-percent-block ${labelClass}">${pct}%</div>
-                <div style="flex:1">
-                    <div class="progress-labels" style="margin-bottom:4px">
-                        <span class="progress-label-name">${r.rating}</span>
-                        <span class="progress-label-val">${r.count.toLocaleString()}</span>
-                    </div>
-                    <div class="progress-bar-bg">
-                        <div class="progress-bar-fill ${fillType}" style="width: 0%" data-width="${pct}%"></div>
-                    </div>
-                </div>
-            `;
-            DOM.chartRatingsList.appendChild(row);
-        });
+    const totalCompliance = data.ratings_distribution.reduce((acc, curr) => acc + curr.count, 0) || 1;
+    data.ratings_distribution.forEach(rat => {
+        const row = document.createElement('div');
+        row.className = 'progress-chart-row';
+        const pct = ((rat.count / totalCompliance) * 100).toFixed(1);
+        
+        row.innerHTML = `
+            <div class="progress-labels">
+                <span class="progress-label-name">${rat.rating}</span>
+                <span class="progress-label-val">${rat.count.toLocaleString()} (${pct}%)</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill fill-amber" style="width: ${pct}%"></div>
+            </div>
+        `;
+        DOM.chartRatingsList.appendChild(row);
+    });
+    
+    // System logs metrics
+    DOM.systemLogsList.innerHTML = '';
+    if (data.latest_sync) {
+        const row = document.createElement('div');
+        row.className = 'sys-log-row';
+        row.innerHTML = `
+            <span class="sys-log-date">${data.latest_sync.sync_date}</span>
+            <span class="sys-log-title">Successful database sync arrivals: isolated delta</span>
+            <div class="sys-log-metrics">
+                <span class="sys-metric-dot"><span class="status-indicator-dot dot-green" style="background:#60a5fa;"></span> Added: ${data.latest_sync.added_count}</span>
+                <span class="sys-metric-dot"><span class="status-indicator-dot dot-green" style="background:#f28b82;"></span> Suspended: ${data.latest_sync.removed_count}</span>
+            </div>
+        `;
+        DOM.systemLogsList.appendChild(row);
+    } else {
+        DOM.systemLogsList.innerHTML = `<div class="sys-log-row"><span class="sys-log-title">No system logs cached inside database.</span></div>`;
     }
-    
-    // System log rendering removed
-    
-    // Small timeout to trigger animated transitions width fills beautifully!
-    setTimeout(() => {
-        const fills = document.querySelectorAll('.progress-bar-fill');
-        fills.forEach(fill => {
-            fill.style.width = fill.dataset.width;
-        });
-    }, 100);
 }
 
-// -------------------------------------------------------------
-// DYNAMIC MANUAL DATABASE RE-SYNC
-// -------------------------------------------------------------
+// 16. MANUAL SYNCHRONIZER
 async function triggerManualSync() {
-    DOM.manualSyncBtn.classList.add('animate-spin');
-    DOM.syncStatusText.textContent = "Downloading live CSV from GOV.UK...";
+    DOM.manualSyncBtn.disabled = true;
+    DOM.manualSyncBtn.querySelector('svg').style.animation = 'spin 1s linear infinite';
+    DOM.syncStatusText.textContent = "Syncing with GOV.UK & Crawling Employers...";
     
     try {
         const res = await fetch(`${BACKEND_URL}/api/sync`, { method: 'POST' });
-        const data = await res.json();
-        
-        DOM.manualSyncBtn.classList.remove('animate-spin');
-        
-        if (data.status === 'success') {
-            alert("Database re-sync completed successfully! Live additions and suspensions calculated.");
+        if (res.ok) {
+            alert("Database synchronization and crawls completed successfully!");
             fetchStats();
-            loadData();
+            runSearch();
         } else {
-            alert("Failed to sync database. GOV.UK may be rate limiting or offline. Try again later.");
-            DOM.syncStatusText.textContent = "Sync failed. Offline mode active.";
+            alert("Incremental update was bypassed. Database is already fully up to date.");
         }
-    } catch(e) {
-        console.error("Sync error:", e);
-        DOM.manualSyncBtn.classList.remove('animate-spin');
-        alert("Failed to connect to sync server. Verify server is running.");
-        DOM.syncStatusText.textContent = "Server Connection Offline";
+    } catch (e) {
+        console.error("Manual sync failed:", e);
+        alert("Failed to establish server connection. Verify server is running.");
+    } finally {
+        DOM.manualSyncBtn.disabled = false;
+        DOM.manualSyncBtn.querySelector('svg').style.animation = 'none';
     }
 }
 
-// -------------------------------------------------------------
-// INITIALIZER
-// -------------------------------------------------------------
-window.addEventListener('DOMContentLoaded', () => {
-    // Inject spin css for manual sync button
-    const style = document.createElement('style');
-    style.innerHTML = `
-        .animate-spin svg {
-            animation: spin 1s linear infinite;
-        }
+// 17. UI STATE UTILS & HELPERS
+function toggleJobsLoading(isLoading) {
+    if (isLoading) {
+        DOM.jobsGridContainer.innerHTML = `
+            <div class="table-placeholder-state" style="grid-column: 1 / -1;">
+                <div class="spinner"></div>
+                <p>Crawling & loading live jobs board feed...</p>
+            </div>
+        `;
+    }
+}
+
+function showJobsError() {
+    DOM.jobsGridContainer.innerHTML = `
+        <div class="table-placeholder-state" style="grid-column: 1 / -1;">
+            <p style="color:var(--accent-red); font-weight:600;">Failed to establish backend server connection.</p>
+            <p style="font-size:12px; color:var(--text-muted);">Please verify server.py is running on port 8000.</p>
+        </div>
     `;
-    document.head.appendChild(style);
-    
-    initEvents();
-    loadBookmarks();
-    fetchStats();
-    fetchFilterDropdowns();
-    loadData();
-});
+}
+
+function toggleSponsorsLoading(isLoading) {
+    DOM.tableLoading.style.display = isLoading ? 'flex' : 'none';
+    if (isLoading) {
+        DOM.sponsorTableBody.innerHTML = '';
+        DOM.tableEmpty.style.display = 'none';
+        DOM.tablePaginationNav.style.display = 'none';
+    }
+}
+
+function showSponsorsError() {
+    DOM.sponsorTableBody.innerHTML = '';
+    DOM.tableEmpty.style.display = 'none';
+    DOM.tablePlaceholder = document.createElement('div');
+    DOM.tablePlaceholder.className = 'table-placeholder-state';
+    DOM.tablePlaceholder.innerHTML = `
+        <p style="color:var(--accent-red); font-weight:600;">Failed to retrieve records from sponsors registry.</p>
+    `;
+    DOM.sponsorTableBody.appendChild(DOM.tablePlaceholder);
+}
+
+function getDaysAgo(dateStr) {
+    if (!dateStr) return 0;
+    const diff = Math.abs(new Date() - new Date(dateStr));
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24)) - 1;
+    return isNaN(days) ? 0 : days;
+}
+
+function escapeHTML(str) {
+    if (!str) return '';
+    return str.replace(/[&<>'"]/g, 
+        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+    );
+}
