@@ -3,9 +3,14 @@
    ========================================================================== */
 
 // 1. CORE ENVIRONMENT & API ROUTER
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? '' 
-    : 'https://uk-sponsor-radar-backend.onrender.com';
+const isLocal = window.location.hostname === 'localhost' || 
+                window.location.hostname === '127.0.0.1' || 
+                window.location.hostname.startsWith('192.168.') || 
+                window.location.hostname.startsWith('10.') || 
+                window.location.hostname.startsWith('172.') || 
+                window.location.hostname.endsWith('.local') ||
+                window.location.port !== '';
+const BACKEND_URL = isLocal ? '' : 'https://uk-sponsor-radar-backend.onrender.com';
 
 // 2. UNIFIED STATE MANAGEMENT
 let state = {
@@ -142,7 +147,14 @@ const DOM = {
     chartCitiesList: document.getElementById('chart-cities-list'),
     chartRoutesList: document.getElementById('chart-routes-list'),
     chartRatingsList: document.getElementById('chart-ratings-list'),
-    systemLogsList: document.getElementById('system-logs-list')
+    systemLogsList: document.getElementById('system-logs-list'),
+
+    // Real-Time On-Demand Career Scanner DOM Selectors
+    btnScanJobs: document.getElementById('btn-scan-jobs'),
+    scanResultsBox: document.getElementById('scan-results-box'),
+    scanSpinner: document.getElementById('scan-spinner'),
+    scanStatusText: document.getElementById('scan-status-text'),
+    scanJobsList: document.getElementById('scan-jobs-list')
 };
 
 // 4. APPLICATION CORE INITIALIZATION
@@ -794,7 +806,98 @@ function openSponsorDetails(s) {
         DOM.detailsModalCompareBtn.innerHTML = insideCompare ? 'Remove Compare' : 'Add to Compare';
     };
     
+    // Reset scanner UI
+    if (DOM.scanResultsBox) DOM.scanResultsBox.style.display = 'none';
+    if (DOM.btnScanJobs) {
+        DOM.btnScanJobs.style.display = 'block';
+        DOM.btnScanJobs.disabled = false;
+        DOM.btnScanJobs.innerHTML = 'Scan Company Careers Site';
+        DOM.btnScanJobs.onclick = () => triggerOnDemandScan(s.organisation_name, s.id);
+    }
+    
     DOM.detailsModal.style.display = 'flex';
+}
+
+// 12b. ON-DEMAND DIJKSTRA WEB-SPIDER CAREER SCANNER
+async function triggerOnDemandScan(companyName, sponsorId) {
+    if (!DOM.btnScanJobs || !DOM.scanResultsBox || !DOM.scanSpinner || !DOM.scanStatusText || !DOM.scanJobsList) return;
+    
+    // UI Feedback state transition
+    DOM.btnScanJobs.style.display = 'none';
+    DOM.scanResultsBox.style.display = 'block';
+    DOM.scanSpinner.style.display = 'block';
+    DOM.scanStatusText.textContent = "Traversing links and scanning careers page with Dijkstra Spider...";
+    DOM.scanJobsList.innerHTML = '';
+    
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/crawl-company`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                company_name: companyName,
+                sponsor_id: sponsorId
+            })
+        });
+        
+        if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        
+        const data = await res.json();
+        DOM.scanSpinner.style.display = 'none';
+        
+        if (data.status === 'success' && data.jobs && data.jobs.length > 0) {
+            DOM.scanStatusText.innerHTML = `<span style="color: var(--accent-primary); font-weight: 600;">Success! Found ${data.jobs.length} live UK visa vacancies!</span>`;
+            
+            data.jobs.forEach(job => {
+                const jobRow = document.createElement('div');
+                jobRow.className = 'scraped-job-row';
+                jobRow.style.cssText = 'padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: all 0.2s;';
+                
+                // Add hover effect
+                jobRow.onmouseenter = () => {
+                    jobRow.style.background = 'rgba(255,255,255,0.07)';
+                    jobRow.style.borderColor = 'var(--accent-primary)';
+                };
+                jobRow.onmouseleave = () => {
+                    jobRow.style.background = 'rgba(255,255,255,0.03)';
+                    jobRow.style.borderColor = 'rgba(255,255,255,0.05)';
+                };
+                
+                jobRow.onclick = () => {
+                    // Close details modal
+                    DOM.detailsModal.style.display = 'none';
+                    // Open job details in drawer
+                    openJobDrawer(job);
+                };
+                
+                jobRow.innerHTML = `
+                    <div style="flex: 1; padding-right: 10px;">
+                        <h4 style="margin: 0 0 4px 0; font-size: 13px; font-weight: 600; color: var(--text-primary);">${escapeHTML(job.job_title)}</h4>
+                        <span style="font-size: 11px; color: var(--text-muted);">${escapeHTML(job.location || 'United Kingdom')} • ${escapeHTML(job.department || 'General')}</span>
+                    </div>
+                    <span style="display: flex; align-items: center; color: var(--accent-primary);">
+                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                    </span>
+                `;
+                
+                DOM.scanJobsList.appendChild(jobRow);
+            });
+            
+            // Refresh main jobs board if we are on jobs tab
+            if (state.activeTab === 'jobs') {
+                runSearch();
+            }
+        } else {
+            DOM.scanStatusText.innerHTML = `<span style="color: var(--text-muted);">No visa-sponsored roles found on careers site.</span><br><span style="font-size:11px; color: var(--text-muted); display:inline-block; margin-top:4px;">Try searching on LinkedIn or Indeed using links above.</span>`;
+        }
+    } catch (e) {
+        console.error("On-demand crawl error:", e);
+        DOM.scanSpinner.style.display = 'none';
+        DOM.scanStatusText.innerHTML = `<span style="color: var(--accent-red);">Scanner connection or timeout error.</span>`;
+    }
 }
 
 // 13. COMPARISONS SYSTEMS

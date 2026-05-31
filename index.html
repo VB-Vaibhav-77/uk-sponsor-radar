@@ -498,6 +498,28 @@
                         <a href="#" target="_blank" id="btn-search-google" class="research-btn btn-google">Google Company Site</a>
                     </div>
                 </div>
+
+                <!-- Real-Time On-Demand Algorithmic Web-Spider Scanner -->
+                <div class="job-research-panel" style="margin-top: 8px; background: rgba(26, 115, 232, 0.04); border-color: rgba(26, 115, 232, 0.2);">
+                    <div class="research-header" style="color: var(--accent-primary);">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/><path d="m16.2 7.8-2.9 4.5-4.5 2.9 2.9-4.5 4.5-2.9z"/><circle cx="12" cy="12" r="1"/>
+                        </svg>
+                        <h3>Live Careers Web Spider</h3>
+                    </div>
+                    <p class="research-desc">Scan this company's official website in real-time to discover live visa-sponsored jobs:</p>
+                    
+                    <button class="btn btn-indigo" id="btn-scan-jobs" style="width: 100%; justify-content: center; margin-top: 4px;">
+                        Scan Company Careers Site
+                    </button>
+                    
+                    <!-- Dynamic Scanner Feedback container -->
+                    <div id="scan-results-box" style="margin-top: 14px; display: none; padding: 12px; border-radius: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color);">
+                        <div class="spinner" id="scan-spinner" style="margin: 0 auto 10px auto; width: 22px; height: 22px; border-width: 2.5px;"></div>
+                        <p id="scan-status-text" style="font-size: 12px; text-align: center; color: var(--text-secondary); line-height: 1.5; font-weight: 500;">Resolving domain and traversing link graphs...</p>
+                        <div id="scan-jobs-list" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;"></div>
+                    </div>
+                </div>
             </div>
 
             <footer class="modal-footer">

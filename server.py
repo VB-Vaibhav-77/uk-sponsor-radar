@@ -197,7 +197,9 @@ def is_uk_location(location, title=""):
         "copenhagen", "sunnyvale", "austin", "texas", "california", "new york", "san francisco",
         "chicago", "boston", "seattle", "ny", "sf", "ca", "tx", "wa", "ma", "il", "co", "denver",
         "taiwan", "romania", "czech republic", "prague", "shenzhen", "detroit", "israel", 
-        "milpitas", "miami", "cluj", "cluj-napoca", "hsinchu"
+        "milpitas", "miami", "cluj", "cluj-napoca", "hsinchu", "pune", "bengaluru", "noida", 
+        "gurgaon", "gurugram", "cork", "galway", "lyon", "marseille", "hamburg", "rotterdam",
+        "porto", "milan", "atlanta", "dallas", "los angeles"
     ]
     
     for term in non_uk_terms:
@@ -255,24 +257,53 @@ def clean_company_name_for_suggest(name):
     return name
 
 def auto_discover_careers_url(company_name, city):
-    """Autocomplete Resolver: searches Clearbit, extracts official domain, and probes careers path candidates."""
+    """Autocomplete Resolver: searches Clearbit, extracts official domain, and probes careers path candidates in parallel."""
+    import concurrent.futures
     query = clean_company_name_for_suggest(company_name)
     url = f"https://autocomplete.clearbit.com/v1/companies/suggest?query={urllib.parse.quote(query)}"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    
+    # Premium browser headers to bypass WAF blocks
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+    }
     
     domain = ""
     try:
-        req = urllib.request.Request(url, headers=headers)
+        req = urllib.request.Request(url, headers={'User-Agent': headers['User-Agent']})
         with urllib.request.urlopen(req, timeout=6) as response:
             data = json.loads(response.read().decode('utf-8'))
         
         if data:
+            # 1. Try exact case-insensitive match first (guarantees EY matching ey.com and Softcat matching softcat.com!)
             for match in data:
-                m_name = match.get("name", "").lower()
+                m_name = match.get("name", "").strip().lower()
                 m_domain = match.get("domain", "")
-                if query.lower() in m_name and m_domain:
+                if m_name == query.lower() and m_domain:
                     domain = m_domain
                     break
+            
+            # 2. Try word-boundary matching (e.g. "thought" matches "thought machine")
+            if not domain:
+                for match in data:
+                    m_name = match.get("name", "").strip().lower()
+                    m_domain = match.get("domain", "")
+                    if re.search(r'\b' + re.escape(query.lower()) + r'\b', m_name) and m_domain:
+                        domain = m_domain
+                        break
+            
+            # 3. Fallback to substring matching
+            if not domain:
+                for match in data:
+                    m_name = match.get("name", "").strip().lower()
+                    m_domain = match.get("domain", "")
+                    if query.lower() in m_name and m_domain:
+                        domain = m_domain
+                        break
+                        
             if not domain:
                 domain = data[0].get("domain", "")
     except Exception:
@@ -292,16 +323,32 @@ def auto_discover_careers_url(company_name, city):
         f"https://{domain}"
     ]
     
-    for cand in candidates:
+    # Run candidate probes concurrently in parallel threads to speed up domain discovery 10x!
+    def probe_url(cand_url):
         try:
-            req_probe = urllib.request.Request(cand, headers=headers)
-            with urllib.request.urlopen(req_probe, timeout=3) as resp:
+            req_probe = urllib.request.Request(cand_url, headers=headers)
+            with urllib.request.urlopen(req_probe, timeout=2.5) as resp:
                 if resp.status == 200:
-                    return cand
+                    return cand_url
         except Exception:
-            continue
-            
-    return f"https://{domain}/careers"
+            pass
+        return None
+        
+    successful_probes = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
+        futures = {executor.submit(probe_url, c): c for c in candidates}
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res:
+                successful_probes[res] = candidates.index(res)
+                
+    if successful_probes:
+        # Pick the candidate with the lowest index (highest priority careers path!)
+        best_cand = min(successful_probes, key=successful_probes.get)
+        return best_cand
+                
+    # Return None so we can flag as FAILED and prevent redundant checks next time
+    return None
 
 # ---------------------------------------------------------------------------
 # "SPONSOR WEB RADAR" MULTI-ATS CRAWLER (HYBRID JSON & HTML SPIDER)
@@ -491,34 +538,62 @@ def scrape_company_careers_page_smart(company_name, careers_url, sponsor_id=None
     """
     import heapq
     
-    # 1. Rotated Desktop Browser Header configurations (WAF Bypass)
+    def extract_location(url, text):
+        uk_cities = ["london", "manchester", "birmingham", "leeds", "edinburgh", "glasgow", "bristol", "cambridge", "oxford", "belfast", "cardiff", "sheffield", "liverpool", "newcastle", "nottingham", "reading", "leicester", "coventry", "southampton", "aberdeen"]
+        url_lower = url.lower()
+        text_lower = text.lower()
+        
+        # Protect Northern Ireland
+        url_lower = url_lower.replace("northern ireland", "northern_ireland")
+        text_lower = text_lower.replace("northern ireland", "northern_ireland")
+        
+        for city in uk_cities:
+            if re.search(r'\b' + re.escape(city) + r'\b', text_lower):
+                return city.replace("_", " ").title()
+            if re.search(r'\b' + re.escape(city) + r'\b', url_lower):
+                return city.replace("_", " ").title()
+                
+        if "northern_ireland" in text_lower or "northern_ireland" in url_lower:
+            return "Northern Ireland"
+            
+        return "United Kingdom"
+    
+    # 1. Rotated Desktop Browser Header configurations (WAF Bypass with full standard profiles)
     browser_headers = [
         {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9'
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Accept-Encoding': 'identity'
         },
         {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Connection': 'keep-alive',
+            'Accept-Language': 'en-US,en;q=0.9'
         },
         {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/118.0',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Connection': 'keep-alive',
+            'Accept-Language': 'en-US,en;q=0.9'
         }
     ]
     
     def fetch_with_retry(url, retries=2):
         for attempt in range(retries + 1):
-            headers = browser_headers[attempt % len(browser_headers)]
+            # Create a copy to prevent mutating the shared list of browser headers
+            headers = browser_headers[attempt % len(browser_headers)].copy()
             try:
                 req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=8) as resp:
+                with urllib.request.urlopen(req, timeout=5) as resp:
                     return resp.read().decode('utf-8', errors='ignore')
             except Exception as e:
                 if attempt == retries:
                     return None
-                time.sleep(0.5 * (attempt + 1))
+                time.sleep(0.3 * (attempt + 1))
         return None
 
     def calculate_weight(url_str, link_text):
@@ -656,7 +731,9 @@ def scrape_company_careers_page_smart(company_name, careers_url, sponsor_id=None
                             paras = re.findall(r'<p[^>]*>(.*?)</p>', detail_html, re.IGNORECASE | re.DOTALL)
                             clean_paras = []
                             for p in paras:
-                                p_clean = re.sub(r'<[^>]+>', '', p).strip()
+                                p_clean = re.sub(r'<style[^>]*>.*?</style>', '', p, flags=re.IGNORECASE | re.DOTALL)
+                                p_clean = re.sub(r'<script[^>]*>.*?</script>', '', p_clean, flags=re.IGNORECASE | re.DOTALL)
+                                p_clean = re.sub(r'<[^>]+>', '', p_clean).strip()
                                 p_clean = re.sub(r'\s+', ' ', p_clean)
                                 if len(p_clean) > 40:
                                     clean_paras.append(p_clean)
@@ -681,10 +758,13 @@ def scrape_company_careers_page_smart(company_name, careers_url, sponsor_id=None
                     raw_hash = abs(hash(job_url))
                     raw_id = f"spider-{company_name.lower().replace(' ', '-')}-{raw_hash}"
                     
+                    # Extract dynamic specific location in the UK
+                    job_location = extract_location(job_url, text_clean)
+                    
                     cursor.execute("""
                     INSERT OR REPLACE INTO jobs (sponsor_id, company_name, job_title, department, location, job_url, posted_date, source, raw_id, description)
-                    VALUES (?, ?, ?, 'Careers Portal', 'UK', ?, ?, 'Web Spider', ?, ?)
-                    """, (sponsor_id, company_name, text_clean, job_url, today_str, raw_id, detail_desc))
+                    VALUES (?, ?, ?, 'Careers Portal', ?, ?, ?, 'Web Spider', ?, ?)
+                    """, (sponsor_id, company_name, text_clean, job_location, job_url, today_str, raw_id, detail_desc))
                     jobs_added += 1
                     
                 # Dijkstra Relaxation: Add outgoing link to graph queue if within range
@@ -919,16 +999,16 @@ def auto_crawl_sponsor_batch():
         conn.close()
         return total_seeded
         
-    # 2. General Priority Queue Fallback: Fetch 40 sponsors without live vacancies, prioritizing tech hubs
+    # 2. General Priority Queue Fallback: Fetch 100 sponsors without live vacancies, prioritizing tech hubs and skipping known failed ones
     cursor.execute("""
     SELECT id, organisation_name, town_city, careers_url 
     FROM sponsors 
-    WHERE status != 'Removed' AND id NOT IN (SELECT DISTINCT sponsor_id FROM jobs WHERE sponsor_id IS NOT NULL)
+    WHERE status != 'Removed' AND (careers_url IS NULL OR careers_url != 'FAILED') AND id NOT IN (SELECT DISTINCT sponsor_id FROM jobs WHERE sponsor_id IS NOT NULL)
     ORDER BY CASE 
         WHEN UPPER(town_city) IN ('LONDON', 'MANCHESTER', 'BIRMINGHAM', 'LEEDS', 'EDINBURGH', 'GLASGOW', 'BRISTOL', 'CAMBRIDGE', 'OXFORD') THEN 0
         ELSE 1 
     END ASC, id ASC
-    LIMIT 40
+    LIMIT 100
     """)
     sponsors = cursor.fetchall()
     conn.close()
@@ -948,16 +1028,19 @@ def auto_crawl_sponsor_batch():
         if not careers_url:
             try:
                 careers_url = auto_discover_careers_url(name, city)
+                t_conn = sqlite3.connect(DB_FILE)
+                t_cursor = t_conn.cursor()
                 if careers_url:
-                    t_conn = sqlite3.connect(DB_FILE)
-                    t_cursor = t_conn.cursor()
                     t_cursor.execute("UPDATE sponsors SET careers_url = ? WHERE id = ?", (careers_url, sp_id))
-                    t_conn.commit()
-                    t_conn.close()
+                else:
+                    # Permanent cache flag: Skip this company in future scans to prevent redundant timeouts
+                    t_cursor.execute("UPDATE sponsors SET careers_url = 'FAILED' WHERE id = ?", (sp_id,))
+                t_conn.commit()
+                t_conn.close()
             except Exception as e:
                 print(f"[Concurrent Scraper] URL discovery failed for {name}: {e}")
                 
-        if not careers_url:
+        if not careers_url or careers_url == 'FAILED':
             return 0
             
         try:
@@ -967,7 +1050,7 @@ def auto_crawl_sponsor_batch():
             return 0
 
     total_added = 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=35) as executor:
         results = list(executor.map(process_sponsor_spider, sponsors))
         total_added = sum(results)
         
@@ -1027,6 +1110,64 @@ class UnifiedCheckerHandler(http.server.BaseHTTPRequestHandler):
             
             response = {"status": "success" if (success1 or success2) else "failed"}
             self.wfile.write(json.dumps(response).encode('utf-8'))
+        elif parsed_url.path == "/api/crawl-company":
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length).decode('utf-8')
+                params = json.loads(post_data)
+                company_name = params.get("company_name", "").strip()
+                sponsor_id = params.get("sponsor_id")
+                
+                if not company_name:
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(b"Missing company_name")
+                    return
+                
+                print(f"[API] On-Demand crawl triggered for: {company_name}")
+                
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, town_city, careers_url FROM sponsors WHERE organisation_name = ? OR id = ?", (company_name, sponsor_id))
+                row = cursor.fetchone()
+                
+                careers_url = ""
+                city = "UK"
+                db_sp_id = sponsor_id
+                
+                if row:
+                    db_sp_id, city, careers_url = row
+                
+                if not careers_url:
+                    careers_url = auto_discover_careers_url(company_name, city)
+                    if careers_url and row:
+                        cursor.execute("UPDATE sponsors SET careers_url = ? WHERE id = ?", (careers_url, db_sp_id))
+                        conn.commit()
+                conn.close()
+                
+                jobs_added = 0
+                if careers_url:
+                    jobs_added = scrape_company_careers_page_smart(company_name, careers_url, db_sp_id)
+                    cleanup_non_uk_jobs() # strictly enforce UK only jobs
+                
+                conn = sqlite3.connect(DB_FILE)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM jobs WHERE company_name = ? ORDER BY id DESC", (company_name,))
+                rows = cursor.fetchall()
+                jobs = [dict(r) for r in rows]
+                conn.close()
+                
+                self.send_json({
+                    "status": "success",
+                    "jobs_added": jobs_added,
+                    "jobs": jobs
+                })
+            except Exception as e:
+                print(f"[API] On-Demand crawl failed: {e}")
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(str(e).encode('utf-8'))
         else:
             self.send_error(404, "Not Found")
             
