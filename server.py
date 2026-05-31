@@ -171,6 +171,71 @@ def db_init():
     conn.commit()
     conn.close()
     print("[Database] Schema and indexes initialized successfully.")
+    cleanup_non_uk_jobs()
+
+def is_uk_location(location, title=""):
+    if not location:
+        return True
+        
+    loc_lower = location.lower()
+    title_lower = title.lower() if title else ""
+    
+    # Protect Northern Ireland from triggering Ireland
+    loc_lower = loc_lower.replace("northern ireland", "northern_ireland_protected")
+    title_lower = title_lower.replace("northern ireland", "northern_ireland_protected")
+    
+    non_uk_terms = [
+        "usa", "united states", "us", "america", "canada", "toronto", "vancouver", "montreal",
+        "india", "bangalore", "mumbai", "delhi", "hyderabad", "chennai", "germany", "berlin",
+        "munich", "frankfurt", "france", "paris", "spain", "barcelona", "madrid", "italy",
+        "rome", "milan", "netherlands", "amsterdam", "australia", "sydney", "melbourne",
+        "brisbane", "singapore", "tokyo", "japan", "china", "beijing", "shanghai", "hong kong",
+        "dublin", "ireland", "belgium", "brussels", "switzerland", "zurich", "geneva",
+        "sweden", "stockholm", "poland", "warsaw", "krakow", "austria", "vienna", "mexico",
+        "brazil", "sao paulo", "rio", "south africa", "johannesburg", "cape town", "new zealand",
+        "auckland", "portugal", "lisbon", "finland", "helsinki", "norway", "oslo", "denmark",
+        "copenhagen", "sunnyvale", "austin", "texas", "california", "new york", "san francisco",
+        "chicago", "boston", "seattle", "ny", "sf", "ca", "tx", "wa", "ma", "il", "co", "denver",
+        "taiwan", "romania", "czech republic", "prague", "shenzhen", "detroit", "israel", 
+        "milpitas", "miami", "cluj", "cluj-napoca", "hsinchu"
+    ]
+    
+    for term in non_uk_terms:
+        pattern = r'\b' + re.escape(term) + r'\b'
+        if re.search(pattern, loc_lower) or re.search(pattern, title_lower):
+            has_uk = any(re.search(r'\b' + re.escape(u) + r'\b', loc_lower) for u in ["united kingdom", "london", "uk", "gb", "england", "scotland", "wales", "northern_ireland_protected"])
+            if not has_uk:
+                return False
+                
+    uk_positive = ["united kingdom", "uk", "gb", "england", "scotland", "wales", "northern_ireland_protected", "london", "manchester", "birmingham", "leeds", "glasgow", "edinburgh", "bristol", "cardiff", "belfast", "remote (uk)", "remote uk"]
+    if any(re.search(r'\b' + re.escape(u) + r'\b', loc_lower) for u in uk_positive):
+        return True
+        
+    if any(w in loc_lower for w in ["remote", "flexible", "hybrid", "office"]):
+        return True
+        
+    return True
+
+
+def cleanup_non_uk_jobs():
+    """Removes all non-UK jobs from the database immediately to keep jobs board strictly UK."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, job_title, location, company_name FROM jobs")
+        rows = cursor.fetchall()
+        to_delete = []
+        for r_id, title, loc, company in rows:
+            if not is_uk_location(loc, title):
+                to_delete.append((r_id,))
+        if to_delete:
+            print(f"[Cleanup] Removing {len(to_delete)} non-UK jobs from database...")
+            cursor.executemany("DELETE FROM jobs WHERE id = ?", to_delete)
+            conn.commit()
+    except Exception as e:
+        print(f"[Cleanup] Error removing non-UK jobs: {e}")
+    finally:
+        conn.close()
 
 # ---------------------------------------------------------------------------
 # AUTOMATED BRAND & CAREER URL DISCOVERY
@@ -294,7 +359,7 @@ def crawl_workday(company_name, tenant, board, sponsor_id=None):
                 job_url = f"https://{tenant}.wd3.myworkdayjobs.com/{board}{ext_path}"
                 
                 location = item.get("locationsText", "UK")
-                if any(non_uk in location.lower() for non_uk in ["usa", "canada", "germany", "france", "india"]) and "united kingdom" not in location.lower() and "london" not in location.lower():
+                if not is_uk_location(location, title):
                     continue
                     
                 if job_url in seen_urls:
@@ -350,7 +415,7 @@ def crawl_greenhouse(company_name, token, sponsor_id=None):
             job_url = clean_value(item.get("absolute_url", ""))
             loc_data = item.get("location", {})
             location = loc_data.get("name", "UK") if loc_data else "UK"
-            if any(non_uk in location.lower() for non_uk in ["usa", "canada", "germany", "france", "india"]) and "united kingdom" not in location.lower() and "london" not in location.lower():
+            if not is_uk_location(location, title):
                 continue
             depts = item.get("departments", [])
             department = depts[0].get("name", "General") if depts else "General"
@@ -392,7 +457,7 @@ def crawl_lever(company_name, token, sponsor_id=None):
                 job_url = clean_value(item.get("hostedUrl", ""))
                 categories = item.get("categories", {})
                 location = categories.get("location", "UK")
-                if any(non_uk in location.lower() for non_uk in ["usa", "us", "germany", "india"]) and "london" not in location.lower() and "united kingdom" not in location.lower():
+                if not is_uk_location(location, title):
                     continue
                 
                 # Extract Rich HTML job description from Lever
@@ -566,6 +631,8 @@ def scrape_company_careers_page_smart(company_name, careers_url, sponsor_id=None
                     if any(noise in text_lower for noise in ["sign in", "login", "cookie", "privacy", "about us", "terms", "faq", "contact", "home", "careers", "jobs"]):
                         continue
                     if href.startswith("#") or href.startswith("javascript:") or href.startswith("tel:") or href.startswith("mailto:"):
+                        continue
+                    if not is_uk_location(href, text_clean):
                         continue
                         
                     # Reconstruct absolute URL
